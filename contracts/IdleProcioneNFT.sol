@@ -29,30 +29,39 @@ contract IdleProcioneNFT is
     ReentrancyGuardUpgradeable,
     PausableUpgradeable
 {
+    // ========== Libraries ==========
     using CountersUpgradeable for CountersUpgradeable.Counter;
     using GeneticsLib for *;
     using WhitelistLib for WhitelistLib.WhitelistData;
     using FactionClassLib for FactionClassLib.FactionClassData;
     using StatsLib for uint256;
 
-    // Contatore per gli ID dei token
-    CountersUpgradeable.Counter private _tokenIdCounter;
-
-    // Contatore per i mint random
-    uint256 private _randomMintCount;
-
-    // Mapping per i dati dei procioni
-    mapping(uint256 => uint256) private _procioneData;
-
-    // Contratto autorizzato per il leveling
-    address public levelUpContract;
-
-    // Contratto autorizzato per le uova
-    address public eggContract;
-
-    // Costanti
+    // ========== Constants ==========
     uint256 private constant MAX_RANDOM_MINT = 6000;
     uint256 private constant MINT_PER_WALLET = 3;
+    uint32 private constant CALLBACK_GAS_LIMIT = 2500000;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+
+    // ========== State Variables ==========
+    // Contatori
+    CountersUpgradeable.Counter private _tokenIdCounter;
+    uint256 private _randomMintCount;
+
+    // Storage
+    mapping(uint256 => uint256) private _procioneData;
+    mapping(uint256 => address) private requestToSender;
+
+    // Contratti autorizzati
+    address public levelUpContract;
+    address public eggContract;
+
+    // Chainlink VRF
+    VRFCoordinatorV2Interface private immutable COORDINATOR;
+    bytes32 private immutable keyHash;
+    uint64 private immutable subscriptionId;
+
+    // Stato
+    bool public randomMintPaused;
 
     // Strutture dati
     WhitelistLib.WhitelistData private whitelistData;
@@ -60,18 +69,7 @@ contract IdleProcioneNFT is
     GeneticsLib.TraitCounts private traitCounts;
     GeneticsLib.TraitLimits private traitLimits;
 
-    // Chainlink VRF
-    VRFCoordinatorV2Interface private immutable COORDINATOR;
-    bytes32 private immutable keyHash;
-    uint64 private immutable subscriptionId;
-    uint32 private constant CALLBACK_GAS_LIMIT = 2500000;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    mapping(uint256 => address) private requestToSender;
-
-    // Stato di pausa per il random mint
-    bool public randomMintPaused;
-
-    // Custom errors
+    // ========== Custom Errors ==========
     error RandomMintPaused();
     error MaxRandomMintReached();
     error NoSlotsAvailable();
@@ -81,7 +79,7 @@ contract IdleProcioneNFT is
     error TransferFailed();
     error UnauthorizedEggContract();
 
-    // Eventi
+    // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
     event LevelUpContractUpdated(address indexed newContract);
     event RandomMintRequested(address indexed sender, uint256 requestId);
@@ -103,6 +101,7 @@ contract IdleProcioneNFT is
     event RandomMintPausedUpdated(bool paused);
     event EggContractUpdated(address indexed newContract);
 
+    // ========== Constructor & Initializer ==========
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(
         address _vrfCoordinator,
@@ -125,73 +124,80 @@ contract IdleProcioneNFT is
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
 
-        // Inizializza i limiti
         factionClassData.setMaxGenLimits(_maxFacGen, _maxClassGen);
         GeneticsLib.initializeTraitLimits(traitLimits);
-        
-        // Inizializza lo stato di pausa del random mint
         randomMintPaused = false;
     }
 
-    /// @notice Mette in pausa o riattiva il random mint
-    /// @param paused True per mettere in pausa, false per riattivare
-    function setRandomMintPaused(bool paused) external onlyOwner {
-        randomMintPaused = paused;
-        emit RandomMintPausedUpdated(paused);
-    }
-
+    // ========== Public Functions ==========
     function randomMint() external payable whenNotPaused {
         if (randomMintPaused) revert RandomMintPaused();
         if (_randomMintCount >= MAX_RANDOM_MINT) revert MaxRandomMintReached();
         if (!factionClassData.hasAvailableSlots()) revert NoSlotsAvailable();
         whitelistData.checkMintConditions(msg.sender, msg.value, MINT_PER_WALLET);
 
-        // Richiedi numeri random a Chainlink VRF
         uint256 requestId = COORDINATOR.requestRandomWords(
             keyHash,
             subscriptionId,
             REQUEST_CONFIRMATIONS,
             CALLBACK_GAS_LIMIT,
-            1 // numero di parole random
+            1
         );
 
         requestToSender[requestId] = msg.sender;
         emit RandomMintRequested(msg.sender, requestId);
     }
 
+    function mintFromEgg(
+        address to,
+        uint256 genetics,
+        uint256 class,
+        uint256 faction
+    ) external returns (uint256) {
+        if (msg.sender != eggContract) revert UnauthorizedEggContract();
+        if (!factionClassData.hasAvailableSlots()) revert NoSlotsAvailable();
+        
+        uint256 tokenId = _tokenIdCounter.current();
+        _tokenIdCounter.increment();
+
+        unchecked {
+            factionClassData.facGen[faction]++;
+            factionClassData.classGen[class]++;
+        }
+
+        _procioneData[tokenId] = StatsLib.createInitialData(genetics, class, faction);
+        _safeMint(to, tokenId);
+
+        emit ProcioneMinted(tokenId, to, faction, class, genetics);
+        return tokenId;
+    }
+
+    // ========== Internal Functions ==========
     function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
         address sender = requestToSender[requestId];
         uint256 randomNumber = randomWords[0];
         
-        // Genera fazione e classe valide separatamente
         FactionClassLib.Faction faction = factionClassData.generateValidFaction(randomNumber);
         uint256 class = factionClassData.generateValidClass(randomNumber);
         
-        // Incrementa contatori
         unchecked {
             factionClassData.facGen[uint256(faction)]++;
             factionClassData.classGen[class]++;
             _randomMintCount++;
         }
         
-        // Crea il nuovo procione
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
         whitelistData.mintedPerWallet[sender]++;
 
-        // Genera la genetica completa
         uint256 genetics = generateCompleteGenetics(randomNumber);
-        
-        // Imposta i dati iniziali del procione
         _procioneData[tokenId] = StatsLib.createInitialData(genetics, class, uint256(faction));
         _safeMint(sender, tokenId);
 
         emit ProcioneMinted(tokenId, sender, uint256(faction), class, genetics);
     }
 
-    // Funzione helper per generare la genetica completa
     function generateCompleteGenetics(uint256 randomNumber) private returns (uint256 genetics) {
-        // Genera alleli per ogni parte
         for (uint256 i = 0; i < 5; i++) {
             (genetics, uint256 mother, uint256 father) = generateTraitPair(
                 genetics,
@@ -202,7 +208,6 @@ contract IdleProcioneNFT is
         }
     }
 
-    // Funzione helper per ottenere il nome della parte
     function getPartName(uint256 partType) private pure returns (string memory) {
         if (partType == 0) return "HEAD";
         if (partType == 1) return "FUR";
@@ -211,7 +216,6 @@ contract IdleProcioneNFT is
         return "ACCESSORY";
     }
 
-    // Funzione helper per generare una coppia di tratti
     function generateTraitPair(
         uint256 genetics,
         uint256 randomNumber,
@@ -239,7 +243,7 @@ contract IdleProcioneNFT is
         return (genetics, mother, father);
     }
 
-    // Funzioni amministrative
+    // ========== Admin Functions ==========
     function setWhitelistPhase1(address[] calldata addresses, bool status) external onlyOwner {
         whitelistData.setWhitelistPhase1(addresses, status);
     }
@@ -268,16 +272,9 @@ contract IdleProcioneNFT is
         whitelistData.setWhitelistBatch(addresses, phase1Status, phase2Status);
     }
 
-    function updateProcioneData(uint256 tokenId, uint256 newData) external {
-        if (!_exists(tokenId)) revert TokenNotExists();
-        if (msg.sender != levelUpContract) revert UnauthorizedCaller();
-        _procioneData[tokenId] = newData;
-        emit DataUpdated(tokenId, newData);
-    }
-
-    function getProcioneData(uint256 tokenId) external view returns (uint256) {
-        if (!_exists(tokenId)) revert TokenNotExists();
-        return _procioneData[tokenId];
+    function setRandomMintPaused(bool paused) external onlyOwner {
+        randomMintPaused = paused;
+        emit RandomMintPausedUpdated(paused);
     }
 
     function setLevelUpContract(address _newAddress) external onlyOwner {
@@ -292,7 +289,13 @@ contract IdleProcioneNFT is
         emit EggContractUpdated(_newAddress);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     function withdraw() external onlyOwner {
         (bool success, ) = payable(owner()).call{value: address(this).balance}("");
@@ -302,6 +305,17 @@ contract IdleProcioneNFT is
     function rescueERC20(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         IERC20(token).transfer(owner(), amount);
+    }
+
+    // ========== View Functions ==========
+    function getProcioneData(uint256 tokenId) external view returns (uint256) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        return _procioneData[tokenId];
+    }
+
+    function getProcioneStats(uint256 tokenId) external view returns (StatsLib.Stats memory) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        return StatsLib.extractStats(_procioneData[tokenId]);
     }
 
     function getAvailableFactions() external view returns (uint256[5] memory) {
@@ -321,74 +335,14 @@ contract IdleProcioneNFT is
         return whitelistData.getMintInfo(wallet, MINT_PER_WALLET);
     }
 
-    function pause() external onlyOwner {
-        _pause();
-    }
-    
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    function getProcioneStats(uint256 tokenId) external view returns (StatsLib.Stats memory) {
-        if (!_exists(tokenId)) revert TokenNotExists();
-        return StatsLib.extractStats(_procioneData[tokenId]);
-    }
-
-    /// @notice Restituisce il numero totale di procioni mintati tramite random mint
     function getRandomMintCount() external view returns (uint256) {
         return _randomMintCount;
     }
 
-    /// @notice Restituisce il numero totale di procioni esistenti
     function getTotalSupply() external view returns (uint256) {
         return _tokenIdCounter.current();
     }
 
-    /// @notice Funzione di mint per il breeding, chiamabile solo dal contratto uovo
-    /// @param to Indirizzo del destinatario
-    /// @param genetics Genetica del nuovo procione
-    /// @param class Classe del nuovo procione
-    /// @param faction Fazione del nuovo procione
-    /// @return ID del nuovo procione
-    function mintFromEgg(
-        address to,
-        uint256 genetics,
-        uint256 class,
-        uint256 faction
-    ) external returns (uint256) {
-        if (msg.sender != eggContract) revert UnauthorizedEggContract();
-        
-        uint256 tokenId = _tokenIdCounter.current();
-        _tokenIdCounter.increment();
-
-        // Imposta i dati iniziali del procione
-        uint256 data = 0;
-        
-        // Inizializza i campi base
-        data = StatsLib.updateField(data, 0, StatsLib.XP_MASK, StatsLib.XP_POSITION); // XP iniziale a 0
-        data = StatsLib.updateField(data, 1, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION); // Livello iniziale a 1
-        data = StatsLib.updateField(data, 100, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION); // Salute iniziale a 100
-        
-        // Inizializza le statistiche base
-        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.STRENGTH_POSITION); // Forza iniziale a 10
-        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.SPEED_POSITION); // Velocità iniziale a 10
-        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.INTELLIGENCE_POSITION); // Intelligenza iniziale a 10
-        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.PRECISION_POSITION); // Precisione iniziale a 10
-        
-        // Imposta genetica, classe e fazione
-        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
-        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
-        
-        // Imposta gli slot breeding iniziali a 0 (dovranno essere sbloccati con il leveling)
-        data = StatsLib.updateField(data, 0, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
-
-        // Salva i dati e minta il token
-        _procioneData[tokenId] = data;
-        _safeMint(to, tokenId);
-
-        emit ProcioneMinted(tokenId, to, faction, class, genetics);
-
-        return tokenId;
-    }
+    // ========== Override Functions ==========
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 } 

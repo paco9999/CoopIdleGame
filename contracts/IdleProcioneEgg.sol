@@ -8,6 +8,8 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "./libraries/StatsLib.sol";
 
+// ========== Interfaces ==========
+/// @notice Interfaccia per il contratto NFT dei Procioni
 interface IIdleProcioneNFT {
     function mint(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
     function mintFromEgg(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
@@ -20,15 +22,7 @@ interface IIdleProcioneNFT {
 contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
     using Counters for Counters.Counter;
 
-    // Struttura dati per l'uovo
-    struct EggData {
-        uint256 parentId1;
-        uint256 parentId2;
-        uint256 genetics;
-        uint256 hatchTime;
-        bool hatched;
-    }
-
+    // ========== State Variables ==========
     // Contratti esterni
     IIdleProcioneNFT public immutable nftContract;
     address public immutable breedingContract;
@@ -39,13 +33,23 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
     // Mapping per i dati delle uova
     mapping(uint256 => EggData) private _eggData;
 
-    // Custom errors
+    // ========== Structs ==========
+    /// @notice Struttura per i dati di un'uovo
+    struct EggData {
+        uint256 parentId1;
+        uint256 parentId2;
+        uint256 genetics;
+        uint256 hatchTime;
+        bool hatched;
+    }
+
+    // ========== Custom Errors ==========
     error UnauthorizedBreeder();
     error EggAlreadyHatched();
     error EggNotReadyToHatch();
     error InvalidAddress();
 
-    // Eventi
+    // ========== Events ==========
     event EggCreated(
         uint256 indexed eggId,
         address indexed owner,
@@ -60,6 +64,7 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
         address indexed owner
     );
 
+    // ========== Constructor ==========
     /// @notice Costruttore del contratto
     /// @param _name Nome del token
     /// @param _symbol Simbolo del token
@@ -76,12 +81,14 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
         breedingContract = _breedingContract;
     }
 
+    // ========== Public Functions ==========
     /// @notice Crea un nuovo uovo
     /// @param to Indirizzo del destinatario
     /// @param parentId1 ID del primo genitore
     /// @param parentId2 ID del secondo genitore
     /// @param genetics Genetica dell'uovo
     /// @param hatchTime Timestamp di schiusa
+    /// @return eggId ID dell'uovo creato
     function mint(
         address to,
         uint256 parentId1,
@@ -142,8 +149,14 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
         emit EggHatched(eggId, newProcioneId, msg.sender);
     }
 
+    // ========== View Functions ==========
     /// @notice Restituisce i dati di un uovo
     /// @param eggId ID dell'uovo
+    /// @return parentId1 ID del primo genitore
+    /// @return parentId2 ID del secondo genitore
+    /// @return genetics Genetica dell'uovo
+    /// @return hatchTime Tempo di schiusa
+    /// @return hatched Stato di schiusa
     function getEggData(uint256 eggId) external view returns (
         uint256 parentId1,
         uint256 parentId2,
@@ -163,20 +176,29 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Verifica se un uovo è pronto per la schiusa
     /// @param eggId ID dell'uovo
-    /// @return true se l'uovo può essere schiuso
+    /// @return bool Indica se l'uovo può essere schiuso
     function canHatch(uint256 eggId) external view returns (bool) {
         EggData memory egg = _eggData[eggId];
         return !egg.hatched && block.timestamp >= egg.hatchTime;
     }
 
+    // ========== Admin Functions ==========
+    /// @notice Mette in pausa il contratto
     function pause() external onlyOwner {
         _pause();
     }
     
+    /// @notice Riprende il contratto dalla pausa
     function unpause() external onlyOwner {
         _unpause();
     }
 
+    // ========== Internal Functions ==========
+    /// @notice Hook chiamato prima del transfer di un token
+    /// @param from Indirizzo di origine
+    /// @param to Indirizzo di destinazione
+    /// @param tokenId ID del token
+    /// @param batchSize Dimensione del batch
     function _beforeTokenTransfer(
         address from,
         address to,

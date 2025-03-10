@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "./libraries/StatsLib.sol";
 
+// ========== Interfaces ==========
+/// @notice Interfaccia per il contratto NFT dei Procioni
 interface IIdleProcioneNFT {
     function ownerOf(uint256 tokenId) external view returns (address);
     function getProcioneData(uint256 tokenId) external view returns (uint256);
@@ -15,7 +17,13 @@ interface IIdleProcioneNFT {
 }
 
 interface IIdleProcioneEgg is IERC20 {
-    function mint(address to, uint256 parentId1, uint256 parentId2, uint256 genetics, uint256 timestamp) external returns (uint256);
+    function mint(
+        address to,
+        uint256 parentId1,
+        uint256 parentId2,
+        uint256 genetics,
+        uint256 timestamp
+    ) external returns (uint256);
 }
 
 /// @title IdleProcioneBreeding
@@ -24,31 +32,32 @@ interface IIdleProcioneEgg is IERC20 {
 contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     using StatsLib for uint256;
 
+    // ========== State Variables ==========
     // Contratti esterni
     IIdleProcioneNFT public immutable nftContract;
     IIdleProcioneEgg public immutable eggContract;
     IERC20 public immutable rewardToken;
     IERC20 public immutable govToken;
 
-    // Variabili di stato
+    // Configurazione
     address public treasuryAddress;
     uint256 public baseCost;
     uint256 public govBaseCost;
     
-    // Mapping per tracciare il numero di breed per NFT
+    // Tracciamento breeding
     mapping(uint256 => uint256) public breedCount;
 
-    // Costanti
+    // ========== Constants ==========
     uint256 private constant INCUBATION_TIME = 5 days;
 
-    // Custom errors
+    // ========== Custom Errors ==========
     error InsufficientBreedingSlots();
     error InvalidAddress();
     error TransferFailed();
     error UnauthorizedBreeder();
     error SameParentNotAllowed();
 
-    // Eventi
+    // ========== Events ==========
     event BreedingInitiated(
         uint256 indexed parent1Id,
         uint256 indexed parent2Id,
@@ -59,6 +68,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     event CostsUpdated(uint256 newBaseCost, uint256 newGovBaseCost);
     event TreasuryUpdated(address indexed newTreasury);
 
+    // ========== Constructor ==========
     /// @notice Costruttore del contratto
     /// @param _nftContract Indirizzo del contratto NFT
     /// @param _eggContract Indirizzo del contratto Egg
@@ -89,6 +99,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         govBaseCost = _govBaseCost;
     }
 
+    // ========== Public Functions ==========
     /// @notice Esegue il breeding di due procioni
     /// @param parent1Id ID del primo genitore
     /// @param parent2Id ID del secondo genitore
@@ -134,6 +145,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         emit BreedingInitiated(parent1Id, parent2Id, eggId, genetics, hatchTime);
     }
 
+    // ========== Internal Functions ==========
     /// @notice Combina la genetica dei genitori per l'uovo
     /// @param parent1Data Dati del primo genitore
     /// @param parent2Data Dati del secondo genitore
@@ -165,28 +177,38 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         return newGenetics;
     }
 
-    // Funzioni amministrative
-
+    // ========== Admin Functions ==========
+    /// @notice Aggiorna i costi del breeding
+    /// @param _baseCost Nuovo costo base in reward token
+    /// @param _govBaseCost Nuovo costo base in governance token
     function setCosts(uint256 _baseCost, uint256 _govBaseCost) external onlyOwner {
         baseCost = _baseCost;
         govBaseCost = _govBaseCost;
         emit CostsUpdated(_baseCost, _govBaseCost);
     }
 
+    /// @notice Aggiorna l'indirizzo del treasury
+    /// @param _newTreasury Nuovo indirizzo del treasury
     function setTreasury(address _newTreasury) external onlyOwner {
         if (_newTreasury == address(0)) revert InvalidAddress();
         treasuryAddress = _newTreasury;
         emit TreasuryUpdated(_newTreasury);
     }
 
+    /// @notice Mette in pausa il contratto
     function pause() external onlyOwner {
         _pause();
     }
     
+    /// @notice Riprende il contratto dalla pausa
     function unpause() external onlyOwner {
         _unpause();
     }
 
+    // ========== View Functions ==========
+    /// @notice Ottiene il numero di breed effettuati per un token
+    /// @param tokenId ID del token
+    /// @return Numero di breed effettuati
     function getBreedCount(uint256 tokenId) external view returns (uint256) {
         return breedCount[tokenId];
     }

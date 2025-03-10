@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "./libraries/StatsLib.sol";
 
+// ========== Interfaces ==========
+/// @notice Interfaccia per il contratto NFT dei Procioni
 interface IIdleProcioneNFT {
     function updateProcioneData(uint256 tokenId, uint256 newData) external;
     function getProcioneData(uint256 tokenId) external view returns (uint256);
@@ -18,17 +20,18 @@ interface IIdleProcioneNFT {
 contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
     using StatsLib for uint256;
 
-    // Variabili di stato immutabili dove possibile
+    // ========== State Variables ==========
+    // Contratti esterni
     IIdleProcioneNFT public immutable nftContract;
     IERC20 public immutable rToken;
     
-    // Variabili di stato modificabili
+    // Configurazione
     address public treasuryAddress;
     uint256 public baseFee;
     uint256 public incrementoFee;
     uint256 public maxLevel;
 
-    // Custom errors
+    // ========== Custom Errors ==========
     error MaxLevelReached();
     error InsufficientXP();
     error InvalidLevel();
@@ -36,12 +39,18 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
     error TransferFailed();
     error InvalidAmount();
 
-    // Eventi
-    event LevelUp(uint256 indexed tokenId, uint256 newLevel, uint256 newXP, uint256 newBreeding);
+    // ========== Events ==========
+    event LevelUp(
+        uint256 indexed tokenId,
+        uint256 newLevel,
+        uint256 newXP,
+        uint256 newBreeding
+    );
     event TreasuryUpdated(address indexed newTreasury);
     event FeeParametersUpdated(uint256 newBaseFee, uint256 newIncremento);
     event MaxLevelUpdated(uint256 newMaxLevel);
 
+    // ========== Constructor ==========
     /// @notice Costruttore del contratto
     /// @param _nftContract Indirizzo del contratto NFT
     /// @param _rToken Indirizzo del token di reward
@@ -68,6 +77,7 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
         maxLevel = _maxLevel;
     }
 
+    // ========== Public Functions ==========
     /// @notice Calcola l'XP necessario per un livello
     /// @param level Livello target
     /// @return XP necessario
@@ -80,13 +90,6 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
     /// @return Fee necessaria
     function calculateFee(uint256 currentLevel) public view returns (uint256) {
         return baseFee + (incrementoFee * (currentLevel - 1));
-    }
-
-    /// @notice Verifica se un livello sblocca breeding
-    /// @param level Livello da verificare
-    /// @return true se il livello sblocca breeding
-    function isBreedingUnlockLevel(uint256 level) internal pure returns (bool) {
-        return level == 3 || level == 5 || level == 10 || level == 15 || level == 20;
     }
 
     /// @notice Esegue il level up di un procione
@@ -139,6 +142,14 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
+    // ========== Internal Functions ==========
+    /// @notice Verifica se un livello sblocca breeding
+    /// @param level Livello da verificare
+    /// @return true se il livello sblocca breeding
+    function isBreedingUnlockLevel(uint256 level) internal pure returns (bool) {
+        return level == 3 || level == 5 || level == 10 || level == 15 || level == 20;
+    }
+
     /// @notice Incrementa le statistiche del procione
     /// @param data Dati attuali
     /// @param levelIncrease Numero di livelli aumentati
@@ -169,34 +180,45 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
         return StatsLib.updateField(data, newStat, StatsLib.STAT_MASK, position);
     }
 
-    // Funzioni amministrative
-
+    // ========== Admin Functions ==========
+    /// @notice Aggiorna l'indirizzo del treasury
+    /// @param _newTreasury Nuovo indirizzo del treasury
     function setTreasury(address _newTreasury) external onlyOwner {
         if (_newTreasury == address(0)) revert InvalidAddress();
         treasuryAddress = _newTreasury;
         emit TreasuryUpdated(_newTreasury);
     }
 
+    /// @notice Aggiorna i parametri delle fee
+    /// @param _baseFee Nuova fee base
+    /// @param _incrementoFee Nuovo incremento della fee
     function setFeeParameters(uint256 _baseFee, uint256 _incrementoFee) external onlyOwner {
         baseFee = _baseFee;
         incrementoFee = _incrementoFee;
         emit FeeParametersUpdated(_baseFee, _incrementoFee);
     }
 
+    /// @notice Aggiorna il livello massimo raggiungibile
+    /// @param _maxLevel Nuovo livello massimo
     function setMaxLevel(uint256 _maxLevel) external onlyOwner {
         if (_maxLevel > 99 || _maxLevel == 0) revert InvalidLevel();
         maxLevel = _maxLevel;
         emit MaxLevelUpdated(_maxLevel);
     }
 
+    /// @notice Mette in pausa il contratto
     function pause() external onlyOwner {
         _pause();
     }
     
+    /// @notice Riprende il contratto dalla pausa
     function unpause() external onlyOwner {
         _unpause();
     }
 
+    /// @notice Recupera i token ERC20 dal contratto
+    /// @param token Indirizzo del token da recuperare
+    /// @param amount Quantità di token da recuperare
     function rescueERC20(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();

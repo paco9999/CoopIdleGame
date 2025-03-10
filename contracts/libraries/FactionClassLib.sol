@@ -1,95 +1,118 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/// @title FactionClassLib
+/// @notice Libreria per la gestione delle fazioni e delle classi dei procioni
+/// @dev Implementa un sistema di generazione e validazione per fazioni e classi
 library FactionClassLib {
-    enum Faction { FOREST, MOUNTAIN, RIVER, CITY, DUMP }
-    enum Class { WARRIOR, RANGER, MAGE, ROGUE, HEALER, TANK }
+    // ========== Enums ==========
+    /// @notice Enumerazione delle possibili fazioni
+    enum Faction {
+        NONE,
+        GUARDIAN,
+        SHADOW,
+        MYSTIC,
+        WILD
+    }
 
+    /// @notice Enumerazione delle possibili classi
+    enum Class {
+        NONE,
+        WARRIOR,
+        ROGUE,
+        MAGE,
+        RANGER,
+        TANK
+    }
+
+    // ========== Structs ==========
+    /// @notice Struttura per gestire i dati delle fazioni e classi
     struct FactionClassData {
-        uint256 maxFacGen;
+        // Limiti massimi di generazione per fazioni e classi
+        uint256 maxFactionGen;
         uint256 maxClassGen;
-        uint256[5] facGen;  // FacGen0 to FacGen4
-        uint256[6] classGen; // ClassGen0 to ClassGen5
+        
+        // Contatori per la generazione di fazioni e classi
+        uint256 facGen;
+        uint256 classGen;
+        
+        // Mapping per tracciare le fazioni e classi generate
+        mapping(uint256 => uint256) factionCount;
+        mapping(uint256 => uint256) classCount;
     }
 
-    event MaxGenLimitsUpdated(uint256 maxFacGen, uint256 maxClassGen);
+    // ========== Events ==========
+    /// @notice Evento emesso quando vengono aggiornati i limiti massimi
+    event MaxGenLimitsUpdated(uint256 newMaxFactionGen, uint256 newMaxClassGen);
 
+    // ========== Public Functions ==========
+    /// @notice Imposta i limiti massimi di generazione per fazioni e classi
+    /// @param data Struttura dei dati da aggiornare
+    /// @param maxFactionGen Nuovo limite massimo per le fazioni
+    /// @param maxClassGen Nuovo limite massimo per le classi
     function setMaxGenLimits(
-        FactionClassData storage self,
-        uint256 _maxFacGen,
-        uint256 _maxClassGen
-    ) internal returns (bool) {
-        self.maxFacGen = _maxFacGen;
-        self.maxClassGen = _maxClassGen;
-        emit MaxGenLimitsUpdated(_maxFacGen, _maxClassGen);
-        return true;
+        FactionClassData storage data,
+        uint256 maxFactionGen,
+        uint256 maxClassGen
+    ) internal {
+        require(maxFactionGen > 0 && maxClassGen > 0, "Limiti non validi");
+        data.maxFactionGen = maxFactionGen;
+        data.maxClassGen = maxClassGen;
+        emit MaxGenLimitsUpdated(maxFactionGen, maxClassGen);
     }
 
-    function hasAvailableSlots(FactionClassData storage self) internal view returns (bool) {
-        // Verifica se almeno una fazione ha spazio
-        bool hasFactionSlot = false;
-        for (uint256 i = 0; i < 5; i++) {
-            if (self.facGen[i] < self.maxFacGen) {
-                hasFactionSlot = true;
-                break;
-            }
-        }
-        
-        // Verifica se almeno una classe ha spazio
-        bool hasClassSlot = false;
-        for (uint256 i = 0; i < 6; i++) {
-            if (self.classGen[i] < self.maxClassGen) {
-                hasClassSlot = true;
-                break;
-            }
-        }
-        
-        return hasFactionSlot && hasClassSlot;
+    /// @notice Verifica se ci sono slot disponibili per la generazione
+    /// @param data Struttura dei dati da verificare
+    /// @return bool Indica se ci sono slot disponibili
+    function hasAvailableSlots(FactionClassData storage data) internal view returns (bool) {
+        return data.facGen < data.maxFactionGen && data.classGen < data.maxClassGen;
     }
 
+    /// @notice Genera una fazione valida
+    /// @param randomValue Numero random per la generazione
+    /// @param attempt Numero del tentativo
+    /// @param data Struttura dei dati per la validazione
+    /// @return Faction Fazione generata
     function generateValidFaction(
-        FactionClassData storage self,
-        uint256 randomNumber
-    ) internal view returns (Faction) {
-        uint256 attempts = 0;
-        while (attempts < 10) {
-            Faction faction = Faction(uint256(keccak256(abi.encode(randomNumber, attempts, "faction"))) % 5);
-            if (self.facGen[uint256(faction)] < self.maxFacGen) {
-                return faction;
-            }
-            attempts++;
+        uint256 randomValue,
+        uint256 attempt,
+        FactionClassData storage data
+    ) internal returns (Faction) {
+        require(data.facGen < data.maxFactionGen, "Limite fazioni raggiunto");
+        
+        uint256 factionValue = uint256(keccak256(abi.encode(randomValue, attempt, "faction"))) % 4 + 1;
+        Faction faction = Faction(factionValue);
+        
+        if (data.factionCount[uint256(faction)] < data.maxFactionGen / 4) {
+            data.factionCount[uint256(faction)]++;
+            data.facGen++;
+            return faction;
         }
-        revert("Impossibile trovare una fazione valida");
+        
+        revert("Nessuna fazione disponibile");
     }
 
+    /// @notice Genera una classe valida
+    /// @param randomValue Numero random per la generazione
+    /// @param attempt Numero del tentativo
+    /// @param data Struttura dei dati per la validazione
+    /// @return Class Classe generata
     function generateValidClass(
-        FactionClassData storage self,
-        uint256 randomNumber
-    ) internal view returns (uint256) {
-        uint256 attempts = 0;
-        while (attempts < 10) {
-            uint256 class = uint256(keccak256(abi.encode(randomNumber, attempts, "class"))) % 6;
-            if (self.classGen[class] < self.maxClassGen) {
-                return class;
-            }
-            attempts++;
+        uint256 randomValue,
+        uint256 attempt,
+        FactionClassData storage data
+    ) internal returns (Class) {
+        require(data.classGen < data.maxClassGen, "Limite classi raggiunto");
+        
+        uint256 classValue = uint256(keccak256(abi.encode(randomValue, attempt, "class"))) % 5 + 1;
+        Class class = Class(classValue);
+        
+        if (data.classCount[uint256(class)] < data.maxClassGen / 5) {
+            data.classCount[uint256(class)]++;
+            data.classGen++;
+            return class;
         }
-        revert("Impossibile trovare una classe valida");
-    }
-
-    function getAvailableFactions(
-        FactionClassData storage self
-    ) internal view returns (uint256[5] memory availableSlots) {
-        for (uint256 i = 0; i < 5; i++) {
-            availableSlots[i] = self.maxFacGen - self.facGen[i];
-        }
-    }
-
-    function getAvailableClasses(
-        FactionClassData storage self
-    ) internal view returns (uint256[6] memory availableSlots) {
-        for (uint256 i = 0; i < 6; i++) {
-            availableSlots[i] = self.maxClassGen - self.classGen[i];
-        }
+        
+        revert("Nessuna classe disponibile");
     }
 } 
