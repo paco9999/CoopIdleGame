@@ -47,6 +47,9 @@ contract IdleProcioneNFT is
     // Contratto autorizzato per il leveling
     address public levelUpContract;
 
+    // Contratto autorizzato per le uova
+    address public eggContract;
+
     // Costanti
     uint256 private constant MAX_RANDOM_MINT = 6000;
     uint256 private constant MINT_PER_WALLET = 3;
@@ -76,6 +79,7 @@ contract IdleProcioneNFT is
     error UnauthorizedCaller();
     error InvalidAddress();
     error TransferFailed();
+    error UnauthorizedEggContract();
 
     // Eventi
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
@@ -97,6 +101,7 @@ contract IdleProcioneNFT is
         GeneticsLib.TraitType fatherType
     );
     event RandomMintPausedUpdated(bool paused);
+    event EggContractUpdated(address indexed newContract);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(
@@ -281,6 +286,12 @@ contract IdleProcioneNFT is
         emit LevelUpContractUpdated(_newAddress);
     }
 
+    function setEggContract(address _newAddress) external onlyOwner {
+        if (_newAddress == address(0)) revert InvalidAddress();
+        eggContract = _newAddress;
+        emit EggContractUpdated(_newAddress);
+    }
+
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function withdraw() external onlyOwner {
@@ -331,5 +342,53 @@ contract IdleProcioneNFT is
     /// @notice Restituisce il numero totale di procioni esistenti
     function getTotalSupply() external view returns (uint256) {
         return _tokenIdCounter.current();
+    }
+
+    /// @notice Funzione di mint per il breeding, chiamabile solo dal contratto uovo
+    /// @param to Indirizzo del destinatario
+    /// @param genetics Genetica del nuovo procione
+    /// @param class Classe del nuovo procione
+    /// @param faction Fazione del nuovo procione
+    /// @return ID del nuovo procione
+    function mintFromEgg(
+        address to,
+        uint256 genetics,
+        uint256 class,
+        uint256 faction
+    ) external returns (uint256) {
+        if (msg.sender != eggContract) revert UnauthorizedEggContract();
+        
+        uint256 tokenId = _tokenIdCounter.current();
+        _tokenIdCounter.increment();
+
+        // Imposta i dati iniziali del procione
+        uint256 data = 0;
+        
+        // Inizializza i campi base
+        data = StatsLib.updateField(data, 0, StatsLib.XP_MASK, StatsLib.XP_POSITION); // XP iniziale a 0
+        data = StatsLib.updateField(data, 1, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION); // Livello iniziale a 1
+        data = StatsLib.updateField(data, 100, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION); // Salute iniziale a 100
+        
+        // Inizializza le statistiche base
+        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.STRENGTH_POSITION); // Forza iniziale a 10
+        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.SPEED_POSITION); // Velocità iniziale a 10
+        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.INTELLIGENCE_POSITION); // Intelligenza iniziale a 10
+        data = StatsLib.updateField(data, 10, StatsLib.STAT_MASK, StatsLib.PRECISION_POSITION); // Precisione iniziale a 10
+        
+        // Imposta genetica, classe e fazione
+        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        
+        // Imposta gli slot breeding iniziali a 0 (dovranno essere sbloccati con il leveling)
+        data = StatsLib.updateField(data, 0, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+
+        // Salva i dati e minta il token
+        _procioneData[tokenId] = data;
+        _safeMint(to, tokenId);
+
+        emit ProcioneMinted(tokenId, to, faction, class, genetics);
+
+        return tokenId;
     }
 } 
