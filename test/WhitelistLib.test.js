@@ -15,7 +15,7 @@ describe("WhitelistLib", function () {
         // Deploy del contratto di test
         WhitelistLibTest = await ethers.getContractFactory("WhitelistLibTest");
         whitelistLibTest = await WhitelistLibTest.deploy();
-        await whitelistLibTest.deployed();
+        await whitelistLibTest.waitForDeployment();
     });
 
     describe("Gestione Whitelist", function () {
@@ -57,7 +57,7 @@ describe("WhitelistLib", function () {
 
             await expect(
                 whitelistLibTest.setWhitelistBatch(addresses, phase1Status, phase2Status)
-            ).to.be.revertedWith("Batch troppo grande");
+            ).to.be.revertedWithCustomError(whitelistLibTest, "BatchTooLarge");
         });
     });
 
@@ -73,7 +73,7 @@ describe("WhitelistLib", function () {
         });
 
         it("Dovrebbe gestire correttamente il prezzo", async function () {
-            const price = ethers.utils.parseEther("1");
+            const price = ethers.parseEther("1");
             await whitelistLibTest.setPrice(price);
             expect(await whitelistLibTest.getPrice()).to.equal(price);
         });
@@ -81,7 +81,7 @@ describe("WhitelistLib", function () {
 
     describe("Condizioni di Mint", function () {
         const mintPerWallet = 2;
-        const price = ethers.utils.parseEther("1");
+        const price = ethers.parseEther("1");
 
         beforeEach(async function () {
             await whitelistLibTest.setPrice(price);
@@ -108,7 +108,7 @@ describe("WhitelistLib", function () {
         it("Non dovrebbe permettere il mint se nessuna fase è attiva", async function () {
             await expect(
                 whitelistLibTest.checkMintConditions(addr1.address, price, mintPerWallet)
-            ).to.be.revertedWith("Nessuna fase attiva");
+            ).to.be.revertedWithCustomError(whitelistLibTest, "NoPhaseActive");
         });
 
         it("Non dovrebbe permettere il mint se non in whitelist", async function () {
@@ -116,7 +116,7 @@ describe("WhitelistLib", function () {
 
             await expect(
                 whitelistLibTest.checkMintConditions(addr1.address, 0, mintPerWallet)
-            ).to.be.revertedWith("Non sei nella whitelist fase 1");
+            ).to.be.revertedWithCustomError(whitelistLibTest, "NotInWhitelistPhase1");
         });
 
         it("Non dovrebbe permettere il mint se valore insufficiente in fase 2", async function () {
@@ -125,7 +125,7 @@ describe("WhitelistLib", function () {
 
             await expect(
                 whitelistLibTest.checkMintConditions(addr1.address, 0, mintPerWallet)
-            ).to.be.revertedWith("AVAX insufficienti");
+            ).to.be.revertedWithCustomError(whitelistLibTest, "InsufficientPayment");
         });
 
         it("Non dovrebbe permettere il mint se superato il limite per wallet", async function () {
@@ -138,7 +138,7 @@ describe("WhitelistLib", function () {
 
             await expect(
                 whitelistLibTest.checkMintConditions(addr1.address, 0, mintPerWallet)
-            ).to.be.revertedWith("Limite per wallet raggiunto");
+            ).to.be.revertedWithCustomError(whitelistLibTest, "WalletLimitReached");
         });
     });
 

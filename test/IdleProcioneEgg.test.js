@@ -5,54 +5,62 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
 describe("IdleProcioneEgg", function () {
     let IdleProcioneEgg;
     let idleProcioneEgg;
-    let MockNFT;
-    let mockNFT;
+    let MockIdleProcioneNFT;
+    let mockIdleProcioneNFT;
     let owner;
     let addr1;
     let addr2;
+    let addrs;
     let breedingContract;
 
+    const HATCH_TIME = 7 * 24 * 60 * 60; // 7 giorni in secondi
+
     beforeEach(async function () {
-        [owner, addr1, addr2, breedingContract] = await ethers.getSigners();
+        [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
         // Deploy del mock NFT
-        MockNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
-        mockNFT = await MockNFT.deploy();
-        await mockNFT.deployed();
+        MockIdleProcioneNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
+        mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
+        await mockIdleProcioneNFT.waitForDeployment();
 
         // Deploy del contratto principale
         IdleProcioneEgg = await ethers.getContractFactory("IdleProcioneEgg");
         idleProcioneEgg = await IdleProcioneEgg.deploy(
-            "Idle Procione Egg",
-            "IPE",
-            mockNFT.address,
-            breedingContract.address
+            await mockIdleProcioneNFT.getAddress(),
+            HATCH_TIME
         );
-        await idleProcioneEgg.deployed();
+        await idleProcioneEgg.waitForDeployment();
+
+        // Setup dei ruoli
+        const BREEDING_ROLE = await idleProcioneEgg.BREEDING_ROLE();
+        await idleProcioneEgg.grantRole(BREEDING_ROLE, owner.address);
+
+        // Deploy del contratto di breeding
+        breedingContract = await ethers.getContractFactory("BreedingContract");
+        await breedingContract.deploy(await mockIdleProcioneNFT.getAddress());
+        await breedingContract.waitForDeployment();
     });
 
     describe("Deployment", function () {
         it("Dovrebbe impostare correttamente i parametri iniziali", async function () {
-            expect(await idleProcioneEgg.name()).to.equal("Idle Procione Egg");
-            expect(await idleProcioneEgg.symbol()).to.equal("IPE");
-            expect(await idleProcioneEgg.nftContract()).to.equal(mockNFT.address);
-            expect(await idleProcioneEgg.breedingContract()).to.equal(breedingContract.address);
+            expect(await idleProcioneEgg.nftContract()).to.equal(await mockIdleProcioneNFT.getAddress());
+            expect(await idleProcioneEgg.hatchTime()).to.equal(HATCH_TIME);
         });
 
         it("Dovrebbe fallire con parametri invalidi", async function () {
-            await expect(IdleProcioneEgg.deploy(
-                "Idle Procione Egg",
-                "IPE",
-                ethers.constants.AddressZero,
-                breedingContract.address
-            )).to.be.revertedWithCustomError(idleProcioneEgg, "InvalidAddress");
+            await expect(
+                IdleProcioneEgg.deploy(
+                    ethers.ZeroAddress,
+                    HATCH_TIME
+                )
+            ).to.be.revertedWith("Indirizzo NFT non valido");
 
-            await expect(IdleProcioneEgg.deploy(
-                "Idle Procione Egg",
-                "IPE",
-                mockNFT.address,
-                ethers.constants.AddressZero
-            )).to.be.revertedWithCustomError(idleProcioneEgg, "InvalidAddress");
+            await expect(
+                IdleProcioneEgg.deploy(
+                    await mockIdleProcioneNFT.getAddress(),
+                    0
+                )
+            ).to.be.revertedWith("Tempo di schiusa non valido");
         });
     });
 
@@ -87,7 +95,7 @@ describe("IdleProcioneEgg", function () {
                 parentId2,
                 genetics,
                 hatchTime
-            )).to.be.revertedWithCustomError(idleProcioneEgg, "UnauthorizedBreeder");
+            )).to.be.revertedWith("AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x5f58e3a2316349923ce3780f8d587db2d72378aed66a8261c916544fa6846ca5");
         });
     });
 
@@ -102,8 +110,8 @@ describe("IdleProcioneEgg", function () {
             // Setup dei dati dei genitori nel mock NFT
             const parent1Data = await createInitialData(100, 1, 1);
             const parent2Data = await createInitialData(100, 2, 2);
-            await mockNFT.updateProcioneData(parentId1, parent1Data);
-            await mockNFT.updateProcioneData(parentId2, parent2Data);
+            await mockIdleProcioneNFT.updateProcioneData(parentId1, parent1Data);
+            await mockIdleProcioneNFT.updateProcioneData(parentId2, parent2Data);
 
             // Mint dell'uovo
             hatchTime = Math.floor(Date.now() / 1000) + 3600;
@@ -119,12 +127,13 @@ describe("IdleProcioneEgg", function () {
 
         it("Non dovrebbe permettere la schiusa prima del tempo", async function () {
             await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
-                .to.be.revertedWithCustomError(idleProcioneEgg, "EggNotReadyToHatch");
+                .to.be.revertedWith("L'uovo non può ancora schiudersi");
         });
 
-        it("Dovrebbe permettere la schiusa dopo il tempo di incubazione", async function () {
-            // Avanza il tempo di 1 ora
-            await time.increase(3600);
+        it("Dovrebbe permettere la schiusa dopo il tempo necessario", async function () {
+            // Avanza il tempo di 7 giorni
+            await ethers.provider.send("evm_increaseTime", [HATCH_TIME]);
+            await ethers.provider.send("evm_mine");
 
             await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
                 .to.emit(idleProcioneEgg, "EggHatched")
@@ -145,7 +154,7 @@ describe("IdleProcioneEgg", function () {
         it("Non dovrebbe permettere a un non proprietario di schiudere l'uovo", async function () {
             await time.increase(3600);
             await expect(idleProcioneEgg.connect(addr2).hatch(eggId))
-                .to.be.revertedWithCustomError(idleProcioneEgg, "UnauthorizedBreeder");
+                .to.be.revertedWith("Non sei il proprietario dell'uovo");
         });
 
         it("Dovrebbe creare un nuovo procione con la genetica corretta", async function () {
@@ -153,7 +162,7 @@ describe("IdleProcioneEgg", function () {
             await idleProcioneEgg.connect(addr1).hatch(eggId);
 
             const newProcioneId = 1; // Il mock NFT incrementa l'ID
-            const newProcioneData = await mockNFT.getProcioneData(newProcioneId);
+            const newProcioneData = await mockIdleProcioneNFT.getProcioneData(newProcioneId);
             const newGenetics = await extractField(newProcioneData, "GENETICS_MASK", "GENETICS_POSITION");
             expect(newGenetics).to.equal(genetics);
         });
@@ -188,7 +197,10 @@ describe("IdleProcioneEgg", function () {
 
         it("Dovrebbe indicare correttamente se un uovo può essere schiuso", async function () {
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.false;
-            await time.increase(3600);
+
+            await ethers.provider.send("evm_increaseTime", [HATCH_TIME]);
+            await ethers.provider.send("evm_mine");
+
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.true;
         });
     });

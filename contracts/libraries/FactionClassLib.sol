@@ -78,18 +78,23 @@ library FactionClassLib {
         uint256 attempt,
         FactionClassData storage data
     ) internal returns (Faction) {
-        require(data.facGen < data.maxFactionGen, "Limite fazioni raggiunto");
+        if (data.facGen >= data.maxFactionGen) {
+            revert("Limite fazioni raggiunto");
+        }
         
         uint256 factionValue = uint256(keccak256(abi.encode(randomValue, attempt, "faction"))) % 4 + 1;
         Faction faction = Faction(factionValue);
         
-        if (data.factionCount[uint256(faction)] < data.maxFactionGen / 4) {
-            data.factionCount[uint256(faction)]++;
-            data.facGen++;
-            return faction;
+        uint256 maxPerFaction = data.maxFactionGen / 4;
+        if (maxPerFaction == 0) maxPerFaction = 1;
+        
+        if (data.factionCount[uint256(faction)] >= maxPerFaction) {
+            revert("Distribuzione fazioni non bilanciata");
         }
         
-        revert("Nessuna fazione disponibile");
+        data.factionCount[uint256(faction)]++;
+        data.facGen++;
+        return faction;
     }
 
     /// @notice Genera una classe valida
@@ -102,18 +107,23 @@ library FactionClassLib {
         uint256 attempt,
         FactionClassData storage data
     ) internal returns (Class) {
-        require(data.classGen < data.maxClassGen, "Limite classi raggiunto");
-        
-        uint256 classValue = uint256(keccak256(abi.encode(randomValue, attempt, "class"))) % 5 + 1;
-        Class class = Class(classValue);
-        
-        if (data.classCount[uint256(class)] < data.maxClassGen / 5) {
-            data.classCount[uint256(class)]++;
-            data.classGen++;
-            return class;
+        if (data.classGen >= data.maxClassGen) {
+            revert("Limite classi raggiunto");
         }
         
-        revert("Nessuna classe disponibile");
+        uint256 classValue = uint256(keccak256(abi.encode(randomValue, attempt, "class"))) % 5 + 1;
+        Class class_ = Class(classValue);
+        
+        uint256 maxPerClass = data.maxClassGen / 5;
+        if (maxPerClass == 0) maxPerClass = 1;
+        
+        if (data.classCount[uint256(class_)] >= maxPerClass) {
+            revert("Distribuzione classi non bilanciata");
+        }
+        
+        data.classCount[uint256(class_)]++;
+        data.classGen++;
+        return class_;
     }
 
     /// @notice Ottiene le fazioni disponibili

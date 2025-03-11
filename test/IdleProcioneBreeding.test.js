@@ -1,14 +1,15 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("IdleProcioneBreeding", function () {
     let IdleProcioneBreeding;
     let idleProcioneBreeding;
-    let MockNFT;
-    let mockNFT;
-    let MockEgg;
-    let mockEgg;
+    let MockIdleProcioneNFT;
+    let mockIdleProcioneNFT;
+    let MockIdleProcioneEgg;
+    let mockIdleProcioneEgg;
     let RewardToken;
     let rewardToken;
     let GovToken;
@@ -16,137 +17,180 @@ describe("IdleProcioneBreeding", function () {
     let owner;
     let addr1;
     let addr2;
-    let treasury;
+    let addrs;
 
     // Costanti per il test
-    const BASE_COST = ethers.utils.parseEther("100");
-    const GOV_BASE_COST = ethers.utils.parseEther("10");
-    const INCUBATION_TIME = 5 * 24 * 60 * 60; // 5 giorni in secondi
+    const BASE_FEE = ethers.parseEther("0.1");
+    const INCREMENTO_FEE = ethers.parseEther("0.05");
+    const MAX_LEVEL = 50;
+
+    // Costanti per le maschere
+    const XP_MASK = "0xFFFFFFFF";
+    const LEVEL_MASK = "0xFF";
+    const HEALTH_MASK = "0xFF";
+    const STRENGTH_MASK = "0xFF";
+    const SPEED_MASK = "0xFF";
+    const INTELLIGENCE_MASK = "0xFF";
+    const ACCURACY_MASK = "0xFF";
+    const BREEDING_MASK = "0xFF";
+
+    // Costanti per le posizioni
+    const XP_POSITION = "0";
+    const LEVEL_POSITION = "32";
+    const HEALTH_POSITION = "40";
+    const STRENGTH_POSITION = "48";
+    const SPEED_POSITION = "56";
+    const INTELLIGENCE_POSITION = "64";
+    const ACCURACY_POSITION = "72";
+    const BREEDING_POSITION = "80";
 
     beforeEach(async function () {
-        [owner, addr1, addr2, treasury] = await ethers.getSigners();
+        [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
         // Deploy dei token mock
         RewardToken = await ethers.getContractFactory("MockERC20");
         rewardToken = await RewardToken.deploy("Reward Token", "RWD");
-        await rewardToken.deployed();
+        await rewardToken.waitForDeployment();
 
         GovToken = await ethers.getContractFactory("MockERC20");
         govToken = await GovToken.deploy("Gov Token", "GOV");
-        await govToken.deployed();
+        await govToken.waitForDeployment();
 
-        // Deploy del mock NFT
-        MockNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
-        mockNFT = await MockNFT.deploy();
-        await mockNFT.deployed();
+        // Deploy dei contratti mock
+        MockIdleProcioneNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
+        mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
+        await mockIdleProcioneNFT.waitForDeployment();
 
-        // Deploy del mock Egg
-        MockEgg = await ethers.getContractFactory("MockIdleProcioneEgg");
-        mockEgg = await MockEgg.deploy();
-        await mockEgg.deployed();
+        MockIdleProcioneEgg = await ethers.getContractFactory("MockIdleProcioneEgg");
+        mockIdleProcioneEgg = await MockIdleProcioneEgg.deploy();
+        await mockIdleProcioneEgg.waitForDeployment();
 
         // Deploy del contratto principale
         IdleProcioneBreeding = await ethers.getContractFactory("IdleProcioneBreeding");
         idleProcioneBreeding = await IdleProcioneBreeding.deploy(
-            mockNFT.address,
-            mockEgg.address,
-            rewardToken.address,
-            govToken.address,
-            treasury.address,
-            BASE_COST,
-            GOV_BASE_COST
+            await mockIdleProcioneNFT.getAddress(),
+            await mockIdleProcioneEgg.getAddress(),
+            owner.address,
+            BASE_FEE,
+            INCREMENTO_FEE
         );
-        await idleProcioneBreeding.deployed();
+        await idleProcioneBreeding.waitForDeployment();
 
         // Setup iniziale
-        await rewardToken.mint(addr1.address, ethers.utils.parseEther("1000"));
-        await govToken.mint(addr1.address, ethers.utils.parseEther("1000"));
-        await rewardToken.connect(addr1).approve(idleProcioneBreeding.address, ethers.constants.MaxUint256);
-        await govToken.connect(addr1).approve(idleProcioneBreeding.address, ethers.constants.MaxUint256);
+        await rewardToken.mint(addr1.address, ethers.parseEther("1000"));
+        await govToken.mint(addr1.address, ethers.parseEther("1000"));
+        await rewardToken.connect(addr1).approve(await idleProcioneBreeding.getAddress(), ethers.MaxUint256);
+        await govToken.connect(addr1).approve(await idleProcioneBreeding.getAddress(), ethers.MaxUint256);
+
+        // Setup dei mock
+        await mockIdleProcioneNFT.setApprovalForAll(await idleProcioneBreeding.getAddress(), true);
+        await mockIdleProcioneEgg.setBreedingContract(await idleProcioneBreeding.getAddress());
+
+        // Mint di un NFT per addr1 e setup dei dati iniziali
+        await mockIdleProcioneNFT.mint(addr1.address, 1);
+        const initialData = await createInitialData(30); // 30 XP
+        await mockIdleProcioneNFT.updateProcioneData(1, initialData);
     });
 
     describe("Deployment", function () {
         it("Dovrebbe impostare correttamente i parametri iniziali", async function () {
-            expect(await idleProcioneBreeding.nftContract()).to.equal(mockNFT.address);
-            expect(await idleProcioneBreeding.eggContract()).to.equal(mockEgg.address);
-            expect(await idleProcioneBreeding.rewardToken()).to.equal(rewardToken.address);
-            expect(await idleProcioneBreeding.govToken()).to.equal(govToken.address);
-            expect(await idleProcioneBreeding.treasuryAddress()).to.equal(treasury.address);
-            expect(await idleProcioneBreeding.baseCost()).to.equal(BASE_COST);
-            expect(await idleProcioneBreeding.govBaseCost()).to.equal(GOV_BASE_COST);
+            expect(await idleProcioneBreeding.nftContract()).to.equal(await mockIdleProcioneNFT.getAddress());
+            expect(await idleProcioneBreeding.eggContract()).to.equal(await mockIdleProcioneEgg.getAddress());
+            expect(await idleProcioneBreeding.treasury()).to.equal(owner.address);
+            expect(await idleProcioneBreeding.baseFee()).to.equal(BASE_FEE);
+            expect(await idleProcioneBreeding.incrementoFee()).to.equal(INCREMENTO_FEE);
         });
 
-        it("Dovrebbe fallire con indirizzi zero", async function () {
-            await expect(IdleProcioneBreeding.deploy(
-                ethers.constants.AddressZero,
-                mockEgg.address,
-                rewardToken.address,
-                govToken.address,
-                treasury.address,
-                BASE_COST,
-                GOV_BASE_COST
-            )).to.be.revertedWithCustomError(idleProcioneBreeding, "InvalidAddress");
+        it("Dovrebbe fallire con parametri invalidi", async function () {
+            await expect(
+                IdleProcioneBreeding.deploy(
+                    ethers.ZeroAddress,
+                    await mockIdleProcioneEgg.getAddress(),
+                    owner.address,
+                    BASE_FEE,
+                    INCREMENTO_FEE
+                )
+            ).to.be.revertedWith("Indirizzo NFT non valido");
+
+            await expect(
+                IdleProcioneBreeding.deploy(
+                    await mockIdleProcioneNFT.getAddress(),
+                    ethers.ZeroAddress,
+                    owner.address,
+                    BASE_FEE,
+                    INCREMENTO_FEE
+                )
+            ).to.be.revertedWith("Indirizzo Egg non valido");
+
+            await expect(
+                IdleProcioneBreeding.deploy(
+                    await mockIdleProcioneNFT.getAddress(),
+                    await mockIdleProcioneEgg.getAddress(),
+                    ethers.ZeroAddress,
+                    BASE_FEE,
+                    INCREMENTO_FEE
+                )
+            ).to.be.revertedWith("Indirizzo Treasury non valido");
         });
     });
 
     describe("Breeding", function () {
         beforeEach(async function () {
-            // Mint di due NFT per addr1
-            await mockNFT.mint(addr1.address, 1);
-            await mockNFT.mint(addr1.address, 2);
-            
-            // Setup dei breeding slots
-            await mockNFT.setBreedingSlots(1, 3);
-            await mockNFT.setBreedingSlots(2, 3);
+            // Mint di due Procioni per il breeding
+            await mockIdleProcioneNFT.mint(addr1.address);
+            await mockIdleProcioneNFT.mint(addr1.address);
         });
 
-        it("Dovrebbe permettere il breeding tra due procioni validi", async function () {
-            await expect(idleProcioneBreeding.connect(addr1).breed(1, 2))
-                .to.emit(idleProcioneBreeding, "BreedingInitiated")
-                .withArgs(1, 2, 0, expect.any(Number), expect.any(Number));
+        it("Dovrebbe permettere il breeding tra due Procioni", async function () {
+            const fee = BASE_FEE;
+            await idleProcioneBreeding.connect(addr1).breed(1, 2, { value: fee });
 
-            // Verifica dei breeding slots aggiornati
-            const parent1Data = await mockNFT.getProcioneData(1);
-            const parent2Data = await mockNFT.getProcioneData(2);
-            expect(StatsLib.extractField(parent1Data, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION)).to.equal(2);
-            expect(StatsLib.extractField(parent2Data, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION)).to.equal(2);
+            expect(await mockIdleProcioneEgg.ownerOf(1)).to.equal(addr1.address);
         });
 
-        it("Non dovrebbe permettere il breeding con lo stesso procione", async function () {
-            await expect(idleProcioneBreeding.connect(addr1).breed(1, 1))
-                .to.be.revertedWithCustomError(idleProcioneBreeding, "SameParentNotAllowed");
+        it("Non dovrebbe permettere il breeding con fee insufficiente", async function () {
+            const fee = BASE_FEE.sub(1);
+            await expect(
+                idleProcioneBreeding.connect(addr1).breed(1, 2, { value: fee })
+            ).to.be.revertedWith("Fee insufficiente");
         });
 
-        it("Non dovrebbe permettere il breeding senza breeding slots", async function () {
-            await mockNFT.setBreedingSlots(1, 0);
-            await expect(idleProcioneBreeding.connect(addr1).breed(1, 2))
-                .to.be.revertedWithCustomError(idleProcioneBreeding, "InsufficientBreedingSlots");
+        it("Non dovrebbe permettere il breeding con lo stesso Procione", async function () {
+            await expect(
+                idleProcioneBreeding.connect(addr1).breed(1, 1, { value: BASE_FEE })
+            ).to.be.revertedWith("Non puoi accoppiare un Procione con se stesso");
         });
 
-        it("Non dovrebbe permettere il breeding senza token sufficienti", async function () {
-            await rewardToken.connect(addr1).transfer(owner.address, await rewardToken.balanceOf(addr1.address));
-            await expect(idleProcioneBreeding.connect(addr1).breed(1, 2))
-                .to.be.revertedWithCustomError(idleProcioneBreeding, "TransferFailed");
+        it("Non dovrebbe permettere il breeding con Procioni non posseduti", async function () {
+            await expect(
+                idleProcioneBreeding.connect(addr2).breed(1, 2, { value: BASE_FEE })
+            ).to.be.revertedWith("Non sei il proprietario di entrambi i Procioni");
         });
 
-        it("Dovrebbe incrementare correttamente il breed count", async function () {
-            await idleProcioneBreeding.connect(addr1).breed(1, 2);
-            expect(await idleProcioneBreeding.getBreedCount(1)).to.equal(1);
-            expect(await idleProcioneBreeding.getBreedCount(2)).to.equal(1);
+        it("Non dovrebbe permettere il breeding con Procioni in cooldown", async function () {
+            await idleProcioneBreeding.connect(addr1).breed(1, 2, { value: BASE_FEE });
+            await expect(
+                idleProcioneBreeding.connect(addr1).breed(1, 2, { value: BASE_FEE })
+            ).to.be.revertedWith("Procione in cooldown");
         });
     });
 
     describe("Admin Functions", function () {
+        it("Dovrebbe permettere all'owner di aggiornare il treasury", async function () {
+            await idleProcioneBreeding.connect(owner).setTreasury(addr1.address);
+            expect(await idleProcioneBreeding.treasury()).to.equal(addr1.address);
+        });
+
         it("Dovrebbe permettere all'owner di aggiornare i costi", async function () {
-            const newBaseCost = ethers.utils.parseEther("200");
-            const newGovBaseCost = ethers.utils.parseEther("20");
+            const newBaseFee = ethers.parseEther("20");
+            const newIncrementoFee = ethers.parseEther("10");
 
-            await expect(idleProcioneBreeding.setCosts(newBaseCost, newGovBaseCost))
+            await expect(idleProcioneBreeding.setCosts(newBaseFee, newIncrementoFee))
                 .to.emit(idleProcioneBreeding, "CostsUpdated")
-                .withArgs(newBaseCost, newGovBaseCost);
+                .withArgs(newBaseFee, newIncrementoFee);
 
-            expect(await idleProcioneBreeding.baseCost()).to.equal(newBaseCost);
-            expect(await idleProcioneBreeding.govBaseCost()).to.equal(newGovBaseCost);
+            expect(await idleProcioneBreeding.baseFee()).to.equal(newBaseFee);
+            expect(await idleProcioneBreeding.incrementoFee()).to.equal(newIncrementoFee);
         });
 
         it("Non dovrebbe permettere a non-owner di aggiornare i costi", async function () {

@@ -9,8 +9,10 @@ import "../libraries/FactionClassLib.sol";
 contract FactionClassLibTest {
     using FactionClassLib for FactionClassLib.FactionClassData;
 
-    // Struttura dati per i test
-    FactionClassLib.FactionClassData public data;
+    FactionClassLib.FactionClassData private data;
+
+    event FactionGenerated(uint8 factionId);
+    event ClassGenerated(uint8 classId);
 
     // Espone i valori degli enum per i test
     function Faction_NONE() public pure returns (uint256) { return uint256(FactionClassLib.Faction.NONE); }
@@ -27,29 +29,40 @@ contract FactionClassLibTest {
     function Class_TANK() public pure returns (uint256) { return uint256(FactionClassLib.Class.TANK); }
 
     // Espone le funzioni della libreria
-    function setMaxGenLimits(uint256 maxFactionGen, uint256 maxClassGen) public {
-        FactionClassLib.setMaxGenLimits(data, maxFactionGen, maxClassGen);
+    function setMaxGenLimits(uint256 maxFactions, uint256 maxClasses) public {
+        data.setMaxGenLimits(maxFactions, maxClasses);
     }
 
-    function hasAvailableSlots() public view returns (bool) {
-        return FactionClassLib.hasAvailableSlots(data);
+    function generateValidFaction() public returns (FactionClassLib.Faction) {
+        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+        FactionClassLib.Faction faction = FactionClassLib.generateValidFaction(seed, 0, data);
+        emit FactionGenerated(uint8(uint256(faction)));
+        return faction;
     }
 
-    function generateValidFaction(uint256 randomValue, uint256 attempt) public returns (uint256) {
-        return uint256(FactionClassLib.generateValidFaction(randomValue, attempt, data));
+    function generateValidClass() public returns (FactionClassLib.Class) {
+        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+        FactionClassLib.Class class_ = FactionClassLib.generateValidClass(seed, 0, data);
+        emit ClassGenerated(uint8(uint256(class_)));
+        return class_;
     }
 
-    function generateValidClass(uint256 randomValue, uint256 attempt) public returns (uint256) {
-        return uint256(FactionClassLib.generateValidClass(randomValue, attempt, data));
+    function generateValidFactionAndClass() public returns (uint8, uint8) {
+        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+        FactionClassLib.Faction faction = FactionClassLib.generateValidFaction(seed, 0, data);
+        uint8 factionId = uint8(uint256(faction));
+        emit FactionGenerated(factionId);
+        
+        FactionClassLib.Class class_ = FactionClassLib.generateValidClass(seed, 1, data);
+        uint8 classId = uint8(uint256(class_));
+        emit ClassGenerated(classId);
+        
+        return (factionId, classId);
     }
 
     // Funzioni di utilità per i test
-    function getMaxFactionGen() public view returns (uint256) {
-        return data.maxFactionGen;
-    }
-
-    function getMaxClassGen() public view returns (uint256) {
-        return data.maxClassGen;
+    function getMaxGenLimits() public view returns (uint256 maxFactionGen, uint256 maxClassGen) {
+        return data.getMaxGenLimits();
     }
 
     function getFacGen() public view returns (uint256) {
@@ -66,5 +79,17 @@ contract FactionClassLibTest {
 
     function getClassCount(uint256 class_) public view returns (uint256) {
         return data.classCount[class_];
+    }
+
+    function hasAvailableSlots() public view returns (bool) {
+        return data.hasAvailableSlots();
+    }
+
+    function getAvailableFactions() public view returns (uint256[5] memory) {
+        return data.getAvailableFactions();
+    }
+
+    function getAvailableClasses() public view returns (uint256[6] memory) {
+        return data.getAvailableClasses();
     }
 } 

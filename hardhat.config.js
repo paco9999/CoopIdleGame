@@ -16,9 +16,10 @@ if (FORK_FUJI) {
   };
 }
 
+/** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.28",
+    version: "0.8.22",
     settings: {
       optimizer: {
         enabled: true,
@@ -36,17 +37,27 @@ module.exports = {
       url: 'https://api.avax-test.network/ext/bc/C/rpc',
       gasPrice: 225000000000,
       chainId: 43113,
-      accounts: [
-        // YOUR PRIVATE KEY HERE
-      ]
+      accounts: []
     },
     mainnet: {
       url: 'https://api.avax.network/ext/bc/C/rpc',
       gasPrice: 225000000000,
       chainId: 43114,
-      accounts: [
-        // YOUR PRIVATE KEY HERE
-      ]
+      accounts: []
+    }
+  },
+  paths: {
+    sources: "./contracts",
+    tests: "./test",
+    cache: "./cache",
+    artifacts: "./artifacts"
+  },
+  mocha: {
+    timeout: 40000
+  },
+  libraries: {
+    "contracts/test/FactionClassLibTest.sol": {
+      "FactionClassLib": "contracts/libraries/FactionClassLib.sol"
     }
   }
 }

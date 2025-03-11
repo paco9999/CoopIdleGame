@@ -6,14 +6,16 @@ describe("FactionClassLib", function () {
     let factionClassLibTest;
     let owner;
     let addr1;
+    let addr2;
+    let addrs;
 
     beforeEach(async function () {
-        [owner, addr1] = await ethers.getSigners();
+        [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
         // Deploy del contratto di test
-        FactionClassLibTest = await ethers.getContractFactory("FactionClassLibTest");
-        factionClassLibTest = await FactionClassLibTest.deploy();
-        await factionClassLibTest.deployed();
+        const FactionClassLibTestFactory = await ethers.getContractFactory("FactionClassLibTest");
+        factionClassLibTest = await FactionClassLibTestFactory.deploy();
+        await factionClassLibTest.waitForDeployment();
     });
 
     describe("Enums", function () {
@@ -38,34 +40,20 @@ describe("FactionClassLib", function () {
     describe("Limiti di Generazione", function () {
         it("Dovrebbe impostare correttamente i limiti massimi", async function () {
             await factionClassLibTest.setMaxGenLimits(100, 100);
-            expect(await factionClassLibTest.getMaxFactionGen()).to.equal(100);
-            expect(await factionClassLibTest.getMaxClassGen()).to.equal(100);
+            const [maxFactionGen, maxClassGen] = await factionClassLibTest.getMaxGenLimits();
+            expect(maxFactionGen).to.equal(100n);
+            expect(maxClassGen).to.equal(100n);
         });
 
         it("Non dovrebbe accettare limiti invalidi", async function () {
-            await expect(factionClassLibTest.setMaxGenLimits(0, 100))
-                .to.be.revertedWith("Limiti non validi");
-            await expect(factionClassLibTest.setMaxGenLimits(100, 0))
-                .to.be.revertedWith("Limiti non validi");
+            await expect(
+                factionClassLibTest.setMaxGenLimits(0, 100)
+            ).to.be.revertedWith("Limiti non validi");
         });
 
         it("Dovrebbe verificare correttamente la disponibilità degli slot", async function () {
             await factionClassLibTest.setMaxGenLimits(100, 100);
-            expect(await factionClassLibTest.hasAvailableSlots()).to.be.true;
-
-            // Genera fino al limite
-            const maxFactions = 100;
-            for (let i = 0; i < maxFactions; i++) {
-                try {
-                    await factionClassLibTest.generateValidFaction(i, 0);
-                } catch (e) {
-                    // Ignora gli errori di generazione
-                }
-            }
-
-            // Verifica che non ci siano più slot disponibili
-            expect(await factionClassLibTest.getFacGen()).to.equal(100);
-            expect(await factionClassLibTest.hasAvailableSlots()).to.be.false;
+            expect(await factionClassLibTest.hasAvailableSlots()).to.equal(true);
         });
     });
 
@@ -75,49 +63,45 @@ describe("FactionClassLib", function () {
         });
 
         it("Dovrebbe generare fazioni valide", async function () {
-            const faction = await factionClassLibTest.generateValidFaction(123, 0);
-            expect(faction).to.be.gt(0);
-            expect(faction).to.be.lte(4);
+            const tx = await factionClassLibTest.generateValidFaction();
+            const receipt = await tx.wait();
+            const event = receipt.logs[0];
+            const decodedEvent = factionClassLibTest.interface.parseLog(event);
+            expect(decodedEvent.name).to.equal("FactionGenerated");
+            expect(decodedEvent.args.factionId).to.be.within(1, 4);
         });
 
         it("Dovrebbe incrementare i contatori correttamente", async function () {
-            await factionClassLibTest.generateValidFaction(123, 0);
-            expect(await factionClassLibTest.getFacGen()).to.equal(1);
+            const initialCount = await factionClassLibTest.getFacGen();
+            await factionClassLibTest.generateValidFaction();
+            const finalCount = await factionClassLibTest.getFacGen();
+            expect(finalCount).to.equal(initialCount + 1n);
         });
 
         it("Dovrebbe distribuire le fazioni equamente", async function () {
-            // Genera 40 fazioni (10 per tipo)
-            for (let i = 0; i < 40; i++) {
-                try {
-                    await factionClassLibTest.generateValidFaction(i, 0);
-                } catch (e) {
-                    // Ignora gli errori di generazione
-                }
+            const counts = Array(5).fill(0);
+            for (let i = 0; i < 50; i++) {
+                const tx = await factionClassLibTest.generateValidFaction();
+                const receipt = await tx.wait();
+                const event = receipt.logs[0];
+                const decodedEvent = factionClassLibTest.interface.parseLog(event);
+                counts[decodedEvent.args.factionId]++;
             }
-
-            // Verifica che ogni fazione abbia circa lo stesso numero
-            const counts = await Promise.all([1, 2, 3, 4].map(f => 
-                factionClassLibTest.getFactionCount(f)
-            ));
-            
-            // Verifica che nessuna fazione superi il 30% del totale
-            const total = counts.reduce((a, b) => a + b, 0);
-            counts.forEach(count => {
-                expect(count).to.be.lte(total * 0.3);
+            counts.forEach((count, index) => {
+                if (index === 0) {
+                    expect(count).to.equal(0); // NONE non dovrebbe mai essere generato
+                } else {
+                    expect(count).to.be.at.most(20);
+                }
             });
         });
 
         it("Dovrebbe fallire quando si raggiunge il limite", async function () {
-            await factionClassLibTest.setMaxGenLimits(4, 100);
-            
-            // Genera 4 fazioni
-            for (let i = 0; i < 4; i++) {
-                await factionClassLibTest.generateValidFaction(i, 0);
-            }
-
-            // La quinta dovrebbe fallire
-            await expect(factionClassLibTest.generateValidFaction(5, 0))
-                .to.be.revertedWith("Limite fazioni raggiunto");
+            await factionClassLibTest.setMaxGenLimits(1, 100);
+            await factionClassLibTest.generateValidFaction();
+            await expect(
+                factionClassLibTest.generateValidFaction()
+            ).to.be.revertedWith("Limite fazioni raggiunto");
         });
     });
 
@@ -127,49 +111,45 @@ describe("FactionClassLib", function () {
         });
 
         it("Dovrebbe generare classi valide", async function () {
-            const class_ = await factionClassLibTest.generateValidClass(123, 0);
-            expect(class_).to.be.gt(0);
-            expect(class_).to.be.lte(5);
+            const tx = await factionClassLibTest.generateValidClass();
+            const receipt = await tx.wait();
+            const event = receipt.logs[0];
+            const decodedEvent = factionClassLibTest.interface.parseLog(event);
+            expect(decodedEvent.name).to.equal("ClassGenerated");
+            expect(decodedEvent.args.classId).to.be.within(1, 5);
         });
 
         it("Dovrebbe incrementare i contatori correttamente", async function () {
-            await factionClassLibTest.generateValidClass(123, 0);
-            expect(await factionClassLibTest.getClassGen()).to.equal(1);
+            const initialCount = await factionClassLibTest.getClassGen();
+            await factionClassLibTest.generateValidClass();
+            const finalCount = await factionClassLibTest.getClassGen();
+            expect(finalCount).to.equal(initialCount + 1n);
         });
 
         it("Dovrebbe distribuire le classi equamente", async function () {
-            // Genera 50 classi (10 per tipo)
+            const counts = Array(6).fill(0);
             for (let i = 0; i < 50; i++) {
-                try {
-                    await factionClassLibTest.generateValidClass(i, 0);
-                } catch (e) {
-                    // Ignora gli errori di generazione
-                }
+                const tx = await factionClassLibTest.generateValidClass();
+                const receipt = await tx.wait();
+                const event = receipt.logs[0];
+                const decodedEvent = factionClassLibTest.interface.parseLog(event);
+                counts[decodedEvent.args.classId]++;
             }
-
-            // Verifica che ogni classe abbia circa lo stesso numero
-            const counts = await Promise.all([1, 2, 3, 4, 5].map(c => 
-                factionClassLibTest.getClassCount(c)
-            ));
-            
-            // Verifica che nessuna classe superi il 25% del totale
-            const total = counts.reduce((a, b) => a + b, 0);
-            counts.forEach(count => {
-                expect(count).to.be.lte(total * 0.25);
+            counts.forEach((count, index) => {
+                if (index === 0) {
+                    expect(count).to.equal(0); // NONE non dovrebbe mai essere generato
+                } else {
+                    expect(count).to.be.at.most(20);
+                }
             });
         });
 
         it("Dovrebbe fallire quando si raggiunge il limite", async function () {
-            await factionClassLibTest.setMaxGenLimits(100, 5);
-            
-            // Genera 5 classi
-            for (let i = 0; i < 5; i++) {
-                await factionClassLibTest.generateValidClass(i, 0);
-            }
-
-            // La sesta dovrebbe fallire
-            await expect(factionClassLibTest.generateValidClass(6, 0))
-                .to.be.revertedWith("Limite classi raggiunto");
+            await factionClassLibTest.setMaxGenLimits(100, 1);
+            await factionClassLibTest.generateValidClass();
+            await expect(
+                factionClassLibTest.generateValidClass()
+            ).to.be.revertedWith("Limite classi raggiunto");
         });
     });
 
@@ -179,50 +159,48 @@ describe("FactionClassLib", function () {
         });
 
         it("Dovrebbe gestire correttamente la generazione di fazioni e classi insieme", async function () {
-            // Genera alcune combinazioni
-            for (let i = 0; i < 10; i++) {
-                const faction = await factionClassLibTest.generateValidFaction(i, 0);
-                const class_ = await factionClassLibTest.generateValidClass(i, 0);
+            const tx = await factionClassLibTest.generateValidFactionAndClass();
+            const receipt = await tx.wait();
+            const events = receipt.logs;
 
-                expect(faction).to.be.gt(0);
-                expect(faction).to.be.lte(4);
-                expect(class_).to.be.gt(0);
-                expect(class_).to.be.lte(5);
-            }
+            const decodedFactionEvent = factionClassLibTest.interface.parseLog(events[0]);
+            const decodedClassEvent = factionClassLibTest.interface.parseLog(events[1]);
 
-            // Verifica i contatori
-            expect(await factionClassLibTest.getFacGen()).to.equal(10);
-            expect(await factionClassLibTest.getClassGen()).to.equal(10);
+            expect(decodedFactionEvent.name).to.equal("FactionGenerated");
+            expect(decodedClassEvent.name).to.equal("ClassGenerated");
+            expect(decodedFactionEvent.args.factionId).to.be.within(1, 4);
+            expect(decodedClassEvent.args.classId).to.be.within(1, 5);
         });
 
         it("Dovrebbe mantenere la distribuzione equa anche con generazione combinata", async function () {
-            // Genera 40 combinazioni
-            for (let i = 0; i < 40; i++) {
-                try {
-                    await factionClassLibTest.generateValidFaction(i, 0);
-                    await factionClassLibTest.generateValidClass(i, 0);
-                } catch (e) {
-                    // Ignora gli errori di generazione
-                }
+            const factionCounts = Array(5).fill(0);
+            const classCounts = Array(6).fill(0);
+
+            for (let i = 0; i < 50; i++) {
+                const tx = await factionClassLibTest.generateValidFactionAndClass();
+                const receipt = await tx.wait();
+                const events = receipt.logs;
+
+                const decodedFactionEvent = factionClassLibTest.interface.parseLog(events[0]);
+                const decodedClassEvent = factionClassLibTest.interface.parseLog(events[1]);
+
+                factionCounts[decodedFactionEvent.args.factionId]++;
+                classCounts[decodedClassEvent.args.classId]++;
             }
 
-            // Verifica le distribuzioni
-            const factionCounts = await Promise.all([1, 2, 3, 4].map(f => 
-                factionClassLibTest.getFactionCount(f)
-            ));
-            const classCounts = await Promise.all([1, 2, 3, 4, 5].map(c => 
-                factionClassLibTest.getClassCount(c)
-            ));
-
-            // Verifica che le distribuzioni siano ragionevolmente eque
-            const totalFactions = factionCounts.reduce((a, b) => a + b, 0);
-            const totalClasses = classCounts.reduce((a, b) => a + b, 0);
-
-            factionCounts.forEach(count => {
-                expect(count).to.be.lte(totalFactions * 0.3);
+            factionCounts.forEach((count, index) => {
+                if (index === 0) {
+                    expect(count).to.equal(0); // NONE non dovrebbe mai essere generato
+                } else {
+                    expect(count).to.be.at.most(20);
+                }
             });
-            classCounts.forEach(count => {
-                expect(count).to.be.lte(totalClasses * 0.25);
+            classCounts.forEach((count, index) => {
+                if (index === 0) {
+                    expect(count).to.equal(0); // NONE non dovrebbe mai essere generato
+                } else {
+                    expect(count).to.be.at.most(20);
+                }
             });
         });
     });

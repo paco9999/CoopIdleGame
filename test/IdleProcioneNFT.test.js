@@ -15,6 +15,7 @@ describe("IdleProcioneNFT", function () {
     let mockVRFCoordinator;
     let mockLinkToken;
     let mockOracle;
+    let ReentrancyAttacker;
 
     // Parametri per il deploy
     const NAME = "IdleProcioneNFT";
@@ -78,6 +79,8 @@ describe("IdleProcioneNFT", function () {
         mockVRFCoordinator = fixture.mockVRFCoordinator;
         mockLinkToken = fixture.mockLinkToken;
         mockOracle = mockOracle;
+
+        ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");
     });
 
     describe("Deployment", function () {
@@ -240,6 +243,78 @@ describe("IdleProcioneNFT", function () {
             // Verifica il saldo finale
             const finalBalance = await mockLinkToken.balanceOf(owner.address);
             expect(finalBalance - initialBalance).to.equal(amount);
+        });
+    });
+
+    describe("Data Management", function () {
+        describe("updateProcioneData", function () {
+            it("Dovrebbe fallire se levelUpContract non è impostato", async function () {
+                await expect(idleProcioneNFT.updateProcioneData(0, 123))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            });
+
+            it("Dovrebbe fallire se chiamato da un indirizzo non autorizzato", async function () {
+                await idleProcioneNFT.setLevelUpContract(addr1.address);
+                await expect(idleProcioneNFT.updateProcioneData(0, 123))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            });
+
+            it("Dovrebbe fallire per token non esistenti", async function () {
+                await idleProcioneNFT.setLevelUpContract(addr1.address);
+                await expect(idleProcioneNFT.connect(addr1).updateProcioneData(999, 123))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+            });
+
+            it("Dovrebbe aggiornare i dati correttamente quando chiamato dal levelUpContract", async function () {
+                await idleProcioneNFT.setLevelUpContract(addr1.address);
+                
+                // Mint di un token per il test
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.setPhaseStatus(1, true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                
+                // Simula una risposta VRF per completare il mint
+                const requestId = 1;
+                const randomWords = [123456789];
+                await idleProcioneNFT.fulfillRandomWords(requestId, randomWords);
+                
+                const tokenId = 0;
+                const newData = 123;
+                
+                await idleProcioneNFT.connect(addr1).updateProcioneData(tokenId, newData);
+                expect(await idleProcioneNFT.getProcioneData(tokenId)).to.equal(newData);
+            });
+
+            it("Dovrebbe emettere l'evento corretto con i vecchi e nuovi valori del levelUpContract", async function () {
+                const oldContract = addr1.address;
+                const newContract = addr2.address;
+                
+                await idleProcioneNFT.setLevelUpContract(oldContract);
+                await expect(idleProcioneNFT.setLevelUpContract(newContract))
+                    .to.emit(idleProcioneNFT, "LevelUpContractUpdated")
+                    .withArgs(oldContract, newContract);
+            });
+
+            it("Non dovrebbe permettere reentracy nell'aggiornamento dei dati", async function () {
+                // Mint di un token per il test
+                await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+                await idleProcioneNFT.setPhaseStatus(1, true);
+                await idleProcioneNFT.connect(addr1).randomMint();
+                
+                // Simula una risposta VRF per completare il mint
+                const requestId = 1;
+                const randomWords = [123456789];
+                await idleProcioneNFT.fulfillRandomWords(requestId, randomWords);
+                
+                const attacker = await ReentrancyAttacker.deploy(idleProcioneNFT.target);
+                await idleProcioneNFT.setLevelUpContract(attacker.target);
+                
+                const tokenId = 0;
+                const newData = 123;
+
+                await expect(attacker.attack(tokenId, newData))
+                    .to.be.revertedWith("ReentrancyGuard: reentrant call");
+            });
         });
     });
 }); 

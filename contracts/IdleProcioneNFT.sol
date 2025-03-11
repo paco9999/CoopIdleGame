@@ -81,7 +81,7 @@ contract IdleProcioneNFT is
 
     // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
-    event LevelUpContractUpdated(address indexed newContract);
+    event LevelUpContractUpdated(address indexed oldContract, address indexed newContract);
     event RandomMintRequested(address indexed sender, uint256 requestId);
     event ProcioneMinted(
         uint256 indexed tokenId,
@@ -296,8 +296,9 @@ contract IdleProcioneNFT is
 
     function setLevelUpContract(address _newAddress) external onlyOwner {
         if (_newAddress == address(0)) revert InvalidAddress();
+        address oldContract = levelUpContract;
         levelUpContract = _newAddress;
-        emit LevelUpContractUpdated(_newAddress);
+        emit LevelUpContractUpdated(oldContract, _newAddress);
     }
 
     function setEggContract(address _newAddress) external onlyOwner {
@@ -381,6 +382,23 @@ contract IdleProcioneNFT is
     /// @return bool True se il token esiste
     function _exists(uint256 tokenId) internal view virtual returns (bool) {
         return _ownerOf(tokenId) != address(0);
+    }
+
+    function updateProcioneData(uint256 tokenId, uint256 newData) external nonReentrant {
+        if (levelUpContract == address(0)) revert UnauthorizedCaller();
+        if (msg.sender != levelUpContract) revert UnauthorizedCaller();
+        if (!_exists(tokenId)) revert TokenNotExists();
+        
+        uint256 oldData = _procioneData[tokenId];
+        _procioneData[tokenId] = newData;
+        
+        // Chiamata al contratto levelUp per notificare l'aggiornamento
+        (bool success,) = levelUpContract.call(
+            abi.encodeWithSignature("onDataUpdated(uint256,uint256)", tokenId, newData)
+        );
+        require(success, "Chiamata a onDataUpdated fallita");
+        
+        emit DataUpdated(tokenId, newData);
     }
 
     receive() external payable {}

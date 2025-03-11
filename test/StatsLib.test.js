@@ -4,145 +4,136 @@ const { ethers } = require("hardhat");
 describe("StatsLib", function () {
     let StatsLibTest;
     let statsLibTest;
+    let owner;
+    let addr1;
+    let addr2;
+    let addrs;
 
     beforeEach(async function () {
-        // Deploy di un contratto di test che espone le funzioni della libreria
-        const StatsLib = await ethers.getContractFactory("StatsLib");
-        const statsLib = await StatsLib.deploy();
-        await statsLib.deployed();
+        [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
 
-        // Deploy del contratto di test che utilizza la libreria
-        StatsLibTest = await ethers.getContractFactory("StatsLibTest", {
-            libraries: {
-                StatsLib: statsLib.address
-            }
-        });
+        // Deploy del contratto di test
+        StatsLibTest = await ethers.getContractFactory("StatsLibTest");
         statsLibTest = await StatsLibTest.deploy();
-        await statsLibTest.deployed();
+        await statsLibTest.waitForDeployment();
     });
 
     describe("Masks e Positions", function () {
         it("Dovrebbe avere le maschere corrette", async function () {
-            expect(await statsLibTest.XP_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.LEVEL_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.HEALTH_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.STRENGTH_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.SPEED_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.INTELLIGENCE_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.ACCURACY_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.BREEDING_MASK()).to.equal("0xFFFF");
-            expect(await statsLibTest.CLASS_MASK()).to.equal("0xFF");
-            expect(await statsLibTest.FACTION_MASK()).to.equal("0xFF");
-            expect(await statsLibTest.GENETICS_MASK()).to.equal("0xFFFFFFFF");
+            expect(await statsLibTest.MASK_LEVEL()).to.equal(0xFFn);
+            expect(await statsLibTest.MASK_XP()).to.equal(0xFFFFn << 8n);
+            expect(await statsLibTest.MASK_BREEDING_SLOTS()).to.equal(0xFFn << 24n);
+            expect(await statsLibTest.MASK_BREEDING_COOLDOWN()).to.equal(0xFFFFFFFFn << 32n);
+            expect(await statsLibTest.MASK_BREEDING_COUNT()).to.equal(0xFFFFn << 64n);
+            expect(await statsLibTest.MASK_BREEDING_PARTNER()).to.equal(0xFFFFFFFFn << 80n);
+            expect(await statsLibTest.MASK_BREEDING_TIMESTAMP()).to.equal(0xFFFFFFFFn << 112n);
+            expect(await statsLibTest.MASK_FACTION()).to.equal(0xFFn << 144n);
+            expect(await statsLibTest.MASK_CLASS()).to.equal(0xFFn << 152n);
+            expect(await statsLibTest.MASK_RARITY()).to.equal(0xFFn << 160n);
+            expect(await statsLibTest.MASK_GENERATION()).to.equal(0xFFn << 168n);
+            expect(await statsLibTest.MASK_GENDER()).to.equal(0x1n << 176n);
         });
 
         it("Dovrebbe avere le posizioni corrette", async function () {
-            expect(await statsLibTest.XP_POSITION()).to.equal(0);
-            expect(await statsLibTest.LEVEL_POSITION()).to.equal(16);
-            expect(await statsLibTest.HEALTH_POSITION()).to.equal(32);
-            expect(await statsLibTest.STRENGTH_POSITION()).to.equal(48);
-            expect(await statsLibTest.SPEED_POSITION()).to.equal(64);
-            expect(await statsLibTest.INTELLIGENCE_POSITION()).to.equal(80);
-            expect(await statsLibTest.ACCURACY_POSITION()).to.equal(96);
-            expect(await statsLibTest.BREEDING_POSITION()).to.equal(112);
-            expect(await statsLibTest.CLASS_POSITION()).to.equal(128);
-            expect(await statsLibTest.FACTION_POSITION()).to.equal(136);
-            expect(await statsLibTest.GENETICS_POSITION()).to.equal(144);
+            expect(await statsLibTest.POS_LEVEL()).to.equal(0n);
+            expect(await statsLibTest.POS_XP()).to.equal(8n);
+            expect(await statsLibTest.POS_BREEDING_SLOTS()).to.equal(24n);
+            expect(await statsLibTest.POS_BREEDING_COOLDOWN()).to.equal(32n);
+            expect(await statsLibTest.POS_BREEDING_COUNT()).to.equal(64n);
+            expect(await statsLibTest.POS_BREEDING_PARTNER()).to.equal(80n);
+            expect(await statsLibTest.POS_BREEDING_TIMESTAMP()).to.equal(112n);
+            expect(await statsLibTest.POS_FACTION()).to.equal(144n);
+            expect(await statsLibTest.POS_CLASS()).to.equal(152n);
+            expect(await statsLibTest.POS_RARITY()).to.equal(160n);
+            expect(await statsLibTest.POS_GENERATION()).to.equal(168n);
+            expect(await statsLibTest.POS_GENDER()).to.equal(176n);
+        });
+
+        it("Dovrebbe avere i limiti massimi corretti", async function () {
+            expect(await statsLibTest.MAX_LEVEL()).to.equal(100n);
+            expect(await statsLibTest.MAX_XP()).to.equal(65535n);
+            expect(await statsLibTest.MAX_BREEDING_SLOTS()).to.equal(10n);
+            expect(await statsLibTest.MAX_BREEDING_COUNT()).to.equal(10n);
+            expect(await statsLibTest.MAX_FACTION()).to.equal(4n);
+            expect(await statsLibTest.MAX_CLASS()).to.equal(4n);
+            expect(await statsLibTest.MAX_RARITY()).to.equal(4n);
+            expect(await statsLibTest.MAX_GENERATION()).to.equal(100n);
         });
     });
 
-    describe("Operazioni sui Campi", function () {
-        it("Dovrebbe estrarre correttamente i valori", async function () {
-            const data = "0x000000000000000000000000000000000000000000000000000000000000FFFF"; // XP = 65535
-            const xp = await statsLibTest.extractField(data, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            expect(xp).to.equal(65535);
+    describe("Manipolazione dei Campi", function () {
+        it("Dovrebbe impostare e estrarre correttamente i campi", async function () {
+            let data = 0n;
+
+            // Test per ogni campo
+            data = await statsLibTest.setLevel(data, 50n);
+            expect(await statsLibTest.getLevel(data)).to.equal(50n);
+
+            data = await statsLibTest.setXP(data, 1000n);
+            expect(await statsLibTest.getXP(data)).to.equal(1000n);
+
+            data = await statsLibTest.setBreedingSlots(data, 5n);
+            expect(await statsLibTest.getBreedingSlots(data)).to.equal(5n);
+
+            data = await statsLibTest.setBreedingCooldown(data, 1234567890n);
+            expect(await statsLibTest.getBreedingCooldown(data)).to.equal(1234567890n);
+
+            data = await statsLibTest.setBreedingCount(data, 3n);
+            expect(await statsLibTest.getBreedingCount(data)).to.equal(3n);
+
+            data = await statsLibTest.setBreedingPartner(data, 42n);
+            expect(await statsLibTest.getBreedingPartner(data)).to.equal(42n);
+
+            data = await statsLibTest.setBreedingTimestamp(data, 1234567890n);
+            expect(await statsLibTest.getBreedingTimestamp(data)).to.equal(1234567890n);
+
+            data = await statsLibTest.setFaction(data, 2n);
+            expect(await statsLibTest.getFaction(data)).to.equal(2n);
+
+            data = await statsLibTest.setClass(data, 3n);
+            expect(await statsLibTest.getClass(data)).to.equal(3n);
+
+            data = await statsLibTest.setRarity(data, 1n);
+            expect(await statsLibTest.getRarity(data)).to.equal(1n);
+
+            data = await statsLibTest.setGeneration(data, 1n);
+            expect(await statsLibTest.getGeneration(data)).to.equal(1n);
+
+            data = await statsLibTest.setGender(data, true);
+            expect(await statsLibTest.getGender(data)).to.equal(true);
         });
 
-        it("Dovrebbe aggiornare correttamente i valori", async function () {
-            let data = "0x0000000000000000000000000000000000000000000000000000000000000000";
-            
-            // Aggiorna XP a 1000
-            data = await statsLibTest.updateField(data, 1000, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            let xp = await statsLibTest.extractField(data, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            expect(xp).to.equal(1000);
+        it("Dovrebbe mantenere gli altri campi inalterati", async function () {
+            let data = 0n;
 
-            // Aggiorna Level a 50
-            data = await statsLibTest.updateField(data, 50, await statsLibTest.LEVEL_MASK(), await statsLibTest.LEVEL_POSITION());
-            let level = await statsLibTest.extractField(data, await statsLibTest.LEVEL_MASK(), await statsLibTest.LEVEL_POSITION());
-            expect(level).to.equal(50);
-        });
+            // Imposta tutti i campi
+            data = await statsLibTest.setLevel(data, 50n);
+            data = await statsLibTest.setXP(data, 1000n);
+            data = await statsLibTest.setBreedingSlots(data, 5n);
+            data = await statsLibTest.setBreedingCooldown(data, 1234567890n);
+            data = await statsLibTest.setBreedingCount(data, 3n);
+            data = await statsLibTest.setBreedingPartner(data, 42n);
+            data = await statsLibTest.setBreedingTimestamp(data, 1234567890n);
+            data = await statsLibTest.setFaction(data, 2n);
+            data = await statsLibTest.setClass(data, 3n);
+            data = await statsLibTest.setRarity(data, 1n);
+            data = await statsLibTest.setGeneration(data, 1n);
+            data = await statsLibTest.setGender(data, true);
 
-        it("Dovrebbe gestire correttamente i valori massimi", async function () {
-            let data = "0x0000000000000000000000000000000000000000000000000000000000000000";
-            
-            // Prova con il valore massimo per XP (65535)
-            data = await statsLibTest.updateField(data, 65535, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            let xp = await statsLibTest.extractField(data, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            expect(xp).to.equal(65535);
-
-            // Prova con il valore massimo per Genetics (4294967295)
-            data = await statsLibTest.updateField(data, 4294967295, await statsLibTest.GENETICS_MASK(), await statsLibTest.GENETICS_POSITION());
-            let genetics = await statsLibTest.extractField(data, await statsLibTest.GENETICS_MASK(), await statsLibTest.GENETICS_POSITION());
-            expect(genetics).to.equal(4294967295);
-        });
-
-        it("Dovrebbe mantenere l'integrità dei dati durante gli aggiornamenti multipli", async function () {
-            let data = "0x0000000000000000000000000000000000000000000000000000000000000000";
-            
-            // Aggiorna multipli campi
-            data = await statsLibTest.updateField(data, 1000, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            data = await statsLibTest.updateField(data, 50, await statsLibTest.LEVEL_MASK(), await statsLibTest.LEVEL_POSITION());
-            data = await statsLibTest.updateField(data, 100, await statsLibTest.HEALTH_MASK(), await statsLibTest.HEALTH_POSITION());
-            data = await statsLibTest.updateField(data, 30, await statsLibTest.STRENGTH_MASK(), await statsLibTest.STRENGTH_POSITION());
-            data = await statsLibTest.updateField(data, 1, await statsLibTest.CLASS_MASK(), await statsLibTest.CLASS_POSITION());
-            data = await statsLibTest.updateField(data, 2, await statsLibTest.FACTION_MASK(), await statsLibTest.FACTION_POSITION());
-
-            // Verifica che tutti i valori siano corretti
-            expect(await statsLibTest.extractField(data, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION())).to.equal(1000);
-            expect(await statsLibTest.extractField(data, await statsLibTest.LEVEL_MASK(), await statsLibTest.LEVEL_POSITION())).to.equal(50);
-            expect(await statsLibTest.extractField(data, await statsLibTest.HEALTH_MASK(), await statsLibTest.HEALTH_POSITION())).to.equal(100);
-            expect(await statsLibTest.extractField(data, await statsLibTest.STRENGTH_MASK(), await statsLibTest.STRENGTH_POSITION())).to.equal(30);
-            expect(await statsLibTest.extractField(data, await statsLibTest.CLASS_MASK(), await statsLibTest.CLASS_POSITION())).to.equal(1);
-            expect(await statsLibTest.extractField(data, await statsLibTest.FACTION_MASK(), await statsLibTest.FACTION_POSITION())).to.equal(2);
-        });
-    });
-
-    describe("Validazioni", function () {
-        it("Dovrebbe gestire correttamente i valori zero", async function () {
-            let data = "0x0000000000000000000000000000000000000000000000000000000000000000";
-            
-            // Aggiorna e verifica un campo con valore zero
-            data = await statsLibTest.updateField(data, 0, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            let xp = await statsLibTest.extractField(data, await statsLibTest.XP_MASK(), await statsLibTest.XP_POSITION());
-            expect(xp).to.equal(0);
-        });
-
-        it("Dovrebbe gestire correttamente i valori al limite", async function () {
-            let data = "0x0000000000000000000000000000000000000000000000000000000000000000";
-            
-            // Test con valori al limite per diversi campi
-            const testCases = [
-                { mask: "XP_MASK", position: "XP_POSITION", value: 65535 },
-                { mask: "LEVEL_MASK", position: "LEVEL_POSITION", value: 65535 },
-                { mask: "CLASS_MASK", position: "CLASS_POSITION", value: 255 },
-                { mask: "FACTION_MASK", position: "FACTION_POSITION", value: 255 },
-                { mask: "GENETICS_MASK", position: "GENETICS_POSITION", value: 4294967295 }
-            ];
-
-            for (const testCase of testCases) {
-                data = await statsLibTest.updateField(
-                    data,
-                    testCase.value,
-                    await statsLibTest[testCase.mask](),
-                    await statsLibTest[testCase.position]()
-                );
-                const extractedValue = await statsLibTest.extractField(
-                    data,
-                    await statsLibTest[testCase.mask](),
-                    await statsLibTest[testCase.position]()
-                );
-                expect(extractedValue).to.equal(testCase.value);
-            }
+            // Modifica un campo e verifica che gli altri rimangano invariati
+            data = await statsLibTest.setLevel(data, 60n);
+            expect(await statsLibTest.getLevel(data)).to.equal(60n);
+            expect(await statsLibTest.getXP(data)).to.equal(1000n);
+            expect(await statsLibTest.getBreedingSlots(data)).to.equal(5n);
+            expect(await statsLibTest.getBreedingCooldown(data)).to.equal(1234567890n);
+            expect(await statsLibTest.getBreedingCount(data)).to.equal(3n);
+            expect(await statsLibTest.getBreedingPartner(data)).to.equal(42n);
+            expect(await statsLibTest.getBreedingTimestamp(data)).to.equal(1234567890n);
+            expect(await statsLibTest.getFaction(data)).to.equal(2n);
+            expect(await statsLibTest.getClass(data)).to.equal(3n);
+            expect(await statsLibTest.getRarity(data)).to.equal(1n);
+            expect(await statsLibTest.getGeneration(data)).to.equal(1n);
+            expect(await statsLibTest.getGender(data)).to.equal(true);
         });
     });
 }); 

@@ -5,11 +5,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title IdleProcioneLeveling
 /// @notice Sistema di leveling per gli NFT Procione
 /// @dev Gestisce il level up e le statistiche dei procioni
-contract IdleProcioneLeveling is Ownable, Pausable {
+contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
     // ========== Constants ==========
     uint256 private constant XP_MASK = 0xFFFFFFFF;
     uint256 private constant XP_POSITION = 0;
@@ -43,6 +44,8 @@ contract IdleProcioneLeveling is Ownable, Pausable {
     error MaxLevelReached();
     error NotTokenOwner();
     error TransferFailed();
+    error InvalidStats();
+    error InvalidXPDeduction();
 
     // ========== Events ==========
     event LevelUp(uint256 indexed tokenId, uint256 newLevel, uint256 remainingXP, uint256 fee);
@@ -73,7 +76,7 @@ contract IdleProcioneLeveling is Ownable, Pausable {
     }
 
     // ========== Public Functions ==========
-    function levelUp(uint256 tokenId) external whenNotPaused {
+    function levelUp(uint256 tokenId) external whenNotPaused nonReentrant {
         // Verifica proprietà del token
         if (nftContract.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
 
@@ -94,25 +97,41 @@ contract IdleProcioneLeveling is Ownable, Pausable {
 
         // Aggiorna le statistiche
         uint256 newLevel = currentLevel + 1;
-        data = updateField(data, currentXP - requiredXP, XP_MASK, XP_POSITION);
+        uint256 newXP = currentXP - requiredXP;
+        if (newXP > currentXP) revert InvalidXPDeduction(); // Check per overflow
+
+        data = updateField(data, newXP, XP_MASK, XP_POSITION);
         data = updateField(data, newLevel, LEVEL_MASK, LEVEL_POSITION);
 
-        // Incrementa le statistiche base
-        data = updateField(data, extractField(data, STRENGTH_MASK, STRENGTH_POSITION) + 2, STRENGTH_MASK, STRENGTH_POSITION);
-        data = updateField(data, extractField(data, SPEED_MASK, SPEED_POSITION) + 2, SPEED_MASK, SPEED_POSITION);
-        data = updateField(data, extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION) + 2, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-        data = updateField(data, extractField(data, ACCURACY_MASK, ACCURACY_POSITION) + 2, ACCURACY_MASK, ACCURACY_POSITION);
+        // Incrementa le statistiche base con controlli
+        uint256 newStrength = extractField(data, STRENGTH_MASK, STRENGTH_POSITION) + 2;
+        uint256 newSpeed = extractField(data, SPEED_MASK, SPEED_POSITION) + 2;
+        uint256 newIntelligence = extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION) + 2;
+        uint256 newAccuracy = extractField(data, ACCURACY_MASK, ACCURACY_POSITION) + 2;
+
+        // Verifica che i nuovi valori non superino il massimo consentito (255)
+        if (newStrength > STRENGTH_MASK || newSpeed > SPEED_MASK || 
+            newIntelligence > INTELLIGENCE_MASK || newAccuracy > ACCURACY_MASK) {
+            revert InvalidStats();
+        }
+
+        data = updateField(data, newStrength, STRENGTH_MASK, STRENGTH_POSITION);
+        data = updateField(data, newSpeed, SPEED_MASK, SPEED_POSITION);
+        data = updateField(data, newIntelligence, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
+        data = updateField(data, newAccuracy, ACCURACY_MASK, ACCURACY_POSITION);
 
         // Sblocca slot breeding ai livelli specifici
         if (newLevel == 3 || newLevel == 10 || newLevel == 20 || newLevel == 35 || newLevel == 50) {
             uint256 currentBreeding = extractField(data, BREEDING_MASK, BREEDING_POSITION);
-            data = updateField(data, currentBreeding + 1, BREEDING_MASK, BREEDING_POSITION);
+            uint256 newBreeding = currentBreeding + 1;
+            if (newBreeding > BREEDING_MASK) revert InvalidStats();
+            data = updateField(data, newBreeding, BREEDING_MASK, BREEDING_POSITION);
         }
 
         // Aggiorna i dati del procione
         nftContract.updateProcioneData(tokenId, data);
 
-        emit LevelUp(tokenId, newLevel, currentXP - requiredXP, fee);
+        emit LevelUp(tokenId, newLevel, newXP, fee);
     }
 
     // ========== View Functions ==========

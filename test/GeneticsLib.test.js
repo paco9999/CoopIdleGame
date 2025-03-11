@@ -81,8 +81,15 @@ describe("GeneticsLib", function () {
         it("Dovrebbe generare tipi di tratti validi", async function () {
             const tx = await geneticsLibTest.generateValidTraitType(123, 0);
             const receipt = await tx.wait();
-            const event = receipt.logs.find(log => log.eventName === 'TraitTypeGenerated');
-            const traitType = event.args[0];
+            const event = receipt.logs.find(log => {
+                try {
+                    return geneticsLibTest.interface.parseLog(log).name === "TraitTypeGenerated";
+                } catch (e) {
+                    return false;
+                }
+            });
+            const parsedEvent = geneticsLibTest.interface.parseLog(event);
+            const traitType = parsedEvent.args[0];
             expect(Number(traitType)).to.be.lessThanOrEqual(2);
 
             const count = await geneticsLibTest.getDominantCount();
@@ -92,8 +99,15 @@ describe("GeneticsLib", function () {
         it("Dovrebbe generare ID tratti validi", async function () {
             const tx = await geneticsLibTest.generateValidTraitId(123, 0, 0);
             const receipt = await tx.wait();
-            const event = receipt.logs.find(log => log.eventName === 'TraitIdGenerated');
-            const traitId = event.args[0];
+            const event = receipt.logs.find(log => {
+                try {
+                    return geneticsLibTest.interface.parseLog(log).name === "TraitIdGenerated";
+                } catch (e) {
+                    return false;
+                }
+            });
+            const parsedEvent = geneticsLibTest.interface.parseLog(event);
+            const traitId = parsedEvent.args[0];
             expect(Number(traitId)).to.be.lessThanOrEqual(9);
 
             const count = await geneticsLibTest.getTraitCount(0, traitId);
@@ -103,8 +117,15 @@ describe("GeneticsLib", function () {
         it("Dovrebbe generare alleli validi", async function () {
             const tx = await geneticsLibTest.generateAllele(123, 0, 0);
             const receipt = await tx.wait();
-            const event = receipt.logs.find(log => log.eventName === 'AlleleGenerated');
-            const allele = event.args[0];
+            const event = receipt.logs.find(log => {
+                try {
+                    return geneticsLibTest.interface.parseLog(log).name === "AlleleGenerated";
+                } catch (e) {
+                    return false;
+                }
+            });
+            const parsedEvent = geneticsLibTest.interface.parseLog(event);
+            const allele = parsedEvent.args[0];
             
             const traitType = Number((BigInt(allele) >> BigInt(4)) & BigInt((1 << 2) - 1));
             const traitId = Number(BigInt(allele) & BigInt((1 << 4) - 1));
