@@ -5,6 +5,15 @@ pragma solidity ^0.8.20;
 /// @notice Libreria per la gestione della whitelist dei procioni
 /// @dev Implementa un sistema di whitelist a due fasi con gestione dei prezzi
 library WhitelistLib {
+    // ========== Custom Errors ==========
+    error WalletLimitReached();
+    error NotWhitelisted();
+    error FreePhase();
+    error InsufficientPayment();
+    error NoActivePhase();
+    error BatchTooLarge();
+    error ArrayLengthMismatch();
+
     // ========== Structs ==========
     /// @notice Struttura per gestire i dati della whitelist
     struct WhitelistData {
@@ -101,12 +110,10 @@ library WhitelistLib {
         bool[] calldata phase1Status,
         bool[] calldata phase2Status
     ) internal {
-        require(addresses.length <= 1000, "Batch troppo grande");
-        require(
-            addresses.length == phase1Status.length && 
-            addresses.length == phase2Status.length,
-            "Lunghezze array non corrispondenti"
-        );
+        if (addresses.length > 1000) revert BatchTooLarge();
+        if (addresses.length != phase1Status.length || addresses.length != phase2Status.length) {
+            revert ArrayLengthMismatch();
+        }
         
         for (uint256 i = 0; i < addresses.length; i++) {
             self.whitelistPhase1[addresses[i]] = phase1Status[i];
@@ -126,16 +133,16 @@ library WhitelistLib {
         uint256 value,
         uint256 mintPerWallet
     ) internal view returns (bool) {
-        require(self.mintedPerWallet[sender] < mintPerWallet, "Limite per wallet raggiunto");
+        if (self.mintedPerWallet[sender] >= mintPerWallet) revert WalletLimitReached();
 
         if (self.isPhase1Active) {
-            require(self.whitelistPhase1[sender], "Non sei nella whitelist fase 1");
-            require(value == 0, "Il mint in fase 1 e' gratuito");
+            if (!self.whitelistPhase1[sender]) revert NotWhitelisted();
+            if (value != 0) revert FreePhase();
         } else if (self.isPhase2Active) {
-            require(self.whitelistPhase2[sender], "Non sei nella whitelist fase 2");
-            require(value >= self.price, "AVAX insufficienti");
+            if (!self.whitelistPhase2[sender]) revert NotWhitelisted();
+            if (value < self.price) revert InsufficientPayment();
         } else {
-            revert("Nessuna fase attiva");
+            revert NoActivePhase();
         }
 
         return true;

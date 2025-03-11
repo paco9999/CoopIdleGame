@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./libraries/StatsLib.sol";
+import "./libraries/GeneticsLib.sol";
 
 // ========== Interfaces ==========
 /// @notice Interfaccia per il contratto NFT dei Procioni
@@ -31,6 +32,7 @@ interface IIdleProcioneEgg is IERC20 {
 /// @dev Gestisce il breeding, i costi e la creazione di uova
 contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     using StatsLib for uint256;
+    using GeneticsLib for uint256;
 
     // ========== State Variables ==========
     // Contratti esterni
@@ -85,7 +87,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         address _treasury,
         uint256 _baseCost,
         uint256 _govBaseCost
-    ) {
+    ) Ownable(msg.sender) {
         if (_nftContract == address(0) || _eggContract == address(0) || 
             _rewardToken == address(0) || _govToken == address(0) || 
             _treasury == address(0)) revert InvalidAddress();
@@ -163,12 +165,12 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
             
             // 50% di probabilità di ereditare da ciascun genitore per ogni allele
             uint256 mother = (block.timestamp % 2 == 0) ? 
-                GeneticsLib.extractAllele(parent1Genetics, motherPos) :
-                GeneticsLib.extractAllele(parent2Genetics, motherPos);
+                GeneticsLib.extractField(parent1Genetics, GeneticsLib.ALLELE_MASK, motherPos) :
+                GeneticsLib.extractField(parent2Genetics, GeneticsLib.ALLELE_MASK, motherPos);
                 
             uint256 father = (block.timestamp % 2 == 0) ?
-                GeneticsLib.extractAllele(parent1Genetics, fatherPos) :
-                GeneticsLib.extractAllele(parent2Genetics, fatherPos);
+                GeneticsLib.extractField(parent1Genetics, GeneticsLib.ALLELE_MASK, fatherPos) :
+                GeneticsLib.extractField(parent2Genetics, GeneticsLib.ALLELE_MASK, fatherPos);
             
             newGenetics = StatsLib.updateField(newGenetics, mother, GeneticsLib.ALLELE_MASK, motherPos);
             newGenetics = StatsLib.updateField(newGenetics, father, GeneticsLib.ALLELE_MASK, fatherPos);

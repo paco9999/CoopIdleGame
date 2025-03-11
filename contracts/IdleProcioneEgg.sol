@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "./libraries/StatsLib.sol";
 
 // ========== Interfaces ==========
@@ -19,16 +17,14 @@ interface IIdleProcioneNFT {
 /// @title IdleProcioneEgg
 /// @notice Contratto per la gestione delle uova dei Procioni
 /// @dev Implementa ERC721 con sistema di incubazione
-contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
-    using Counters for Counters.Counter;
-
+contract IdleProcioneEgg is ERC721Pausable, Ownable, ReentrancyGuard {
     // ========== State Variables ==========
     // Contratti esterni
     IIdleProcioneNFT public immutable nftContract;
     address public immutable breedingContract;
 
     // Contatore per gli ID delle uova
-    Counters.Counter private _eggIdCounter;
+    uint256 private _eggIdCounter;
 
     // Mapping per i dati delle uova
     mapping(uint256 => EggData) private _eggData;
@@ -48,6 +44,7 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
     error EggAlreadyHatched();
     error EggNotReadyToHatch();
     error InvalidAddress();
+    error TokenNotExists();
 
     // ========== Events ==========
     event EggCreated(
@@ -75,7 +72,7 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
         string memory _symbol,
         address _nftContract,
         address _breedingContract
-    ) ERC721(_name, _symbol) {
+    ) ERC721(_name, _symbol) Ownable(msg.sender) {
         if (_nftContract == address(0) || _breedingContract == address(0)) revert InvalidAddress();
         nftContract = IIdleProcioneNFT(_nftContract);
         breedingContract = _breedingContract;
@@ -98,8 +95,8 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
     ) external returns (uint256) {
         if (msg.sender != breedingContract) revert UnauthorizedBreeder();
 
-        uint256 eggId = _eggIdCounter.current();
-        _eggIdCounter.increment();
+        uint256 eggId = _eggIdCounter;
+        _eggIdCounter++;
 
         _eggData[eggId] = EggData({
             parentId1: parentId1,
@@ -118,8 +115,8 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Schiude un uovo in un nuovo procione
     /// @param eggId ID dell'uovo da schiudere
-    function hatch(uint256 eggId) external nonReentrant whenNotPaused {
-        if (!_exists(eggId)) revert InvalidAddress();
+    function hatch(uint256 eggId) external nonReentrant {
+        if (!_exists(eggId)) revert TokenNotExists();
         if (ownerOf(eggId) != msg.sender) revert UnauthorizedBreeder();
         
         EggData storage egg = _eggData[eggId];
@@ -164,6 +161,7 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
         uint256 hatchTime,
         bool hatched
     ) {
+        if (!_exists(eggId)) revert TokenNotExists();
         EggData memory egg = _eggData[eggId];
         return (
             egg.parentId1,
@@ -178,33 +176,16 @@ contract IdleProcioneEgg is ERC721, Ownable, ReentrancyGuard, Pausable {
     /// @param eggId ID dell'uovo
     /// @return bool Indica se l'uovo può essere schiuso
     function canHatch(uint256 eggId) external view returns (bool) {
+        if (!_exists(eggId)) revert TokenNotExists();
         EggData memory egg = _eggData[eggId];
         return !egg.hatched && block.timestamp >= egg.hatchTime;
     }
 
     // ========== Admin Functions ==========
-    /// @notice Mette in pausa il contratto
-    function pause() external onlyOwner {
-        _pause();
-    }
-    
-    /// @notice Riprende il contratto dalla pausa
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    // ========== Internal Functions ==========
-    /// @notice Hook chiamato prima del transfer di un token
-    /// @param from Indirizzo di origine
-    /// @param to Indirizzo di destinazione
-    /// @param tokenId ID del token
-    /// @param batchSize Dimensione del batch
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override whenNotPaused {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+    /// @notice Verifica se un token esiste
+    /// @param tokenId ID del token da verificare
+    /// @return bool True se il token esiste
+    function _exists(uint256 tokenId) internal view virtual returns (bool) {
+        return _ownerOf(tokenId) != address(0);
     }
 } 

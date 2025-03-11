@@ -115,4 +115,34 @@ library FactionClassLib {
         
         revert("Nessuna classe disponibile");
     }
+
+    /// @notice Ottiene le fazioni disponibili
+    /// @param data Struttura dei dati da verificare
+    /// @return uint256[5] Array con il conteggio delle fazioni disponibili
+    function getAvailableFactions(FactionClassData storage data) internal view returns (uint256[5] memory) {
+        uint256[5] memory available;
+        for (uint256 i = 0; i < 5; i++) {
+            available[i] = data.maxFactionGen / 4 - data.factionCount[i];
+        }
+        return available;
+    }
+
+    /// @notice Ottiene le classi disponibili
+    /// @param data Struttura dei dati da verificare
+    /// @return uint256[6] Array con il conteggio delle classi disponibili
+    function getAvailableClasses(FactionClassData storage data) internal view returns (uint256[6] memory) {
+        uint256[6] memory available;
+        for (uint256 i = 0; i < 6; i++) {
+            available[i] = data.maxClassGen / 5 - data.classCount[i];
+        }
+        return available;
+    }
+
+    /// @notice Ottiene i limiti massimi di generazione
+    /// @param data Struttura dei dati da verificare
+    /// @return maxFactionGen Limite massimo per le fazioni
+    /// @return maxClassGen Limite massimo per le classi
+    function getMaxGenLimits(FactionClassData storage data) internal view returns (uint256 maxFactionGen, uint256 maxClassGen) {
+        return (data.maxFactionGen, data.maxClassGen);
+    }
 } 

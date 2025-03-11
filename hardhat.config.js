@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@openzeppelin/hardhat-upgrades");
 
 const FORK_FUJI = false;
 const FORK_MAINNET = false;
@@ -16,7 +17,15 @@ if (FORK_FUJI) {
 }
 
 module.exports = {
-  solidity: "0.8.28",
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
+  },
   networks: {
     hardhat: {
       gasPrice: 225000000000,

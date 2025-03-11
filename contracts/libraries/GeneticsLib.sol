@@ -56,6 +56,41 @@ library GeneticsLib {
     }
 
     // ========== Public Functions ==========
+    /// @notice Imposta un campo in un valore a 256 bit
+    /// @param data Dati originali
+    /// @param value Nuovo valore
+    /// @param mask Maschera per il campo
+    /// @param position Posizione del campo
+    /// @return Dati aggiornati
+    function setField(
+        uint256 data,
+        uint256 value,
+        uint256 mask,
+        uint256 position
+    ) internal pure returns (uint256) {
+        // Verifica che il valore sia valido per la maschera
+        require(value <= mask, "Valore troppo grande per la maschera");
+        
+        // Pulisci il campo esistente
+        uint256 clearedData = data & ~(mask << position);
+        
+        // Inserisci il nuovo valore nella posizione corretta
+        return clearedData | (value << position);
+    }
+
+    /// @notice Estrae un campo da un valore a 256 bit
+    /// @param data Dati da cui estrarre
+    /// @param mask Maschera per il campo
+    /// @param position Posizione del campo
+    /// @return Valore estratto
+    function extractField(
+        uint256 data,
+        uint256 mask,
+        uint256 position
+    ) internal pure returns (uint256) {
+        return (data >> position) & mask;
+    }
+
     /// @notice Genera un tipo di carattere valido
     /// @param randomValue Numero random per la generazione
     /// @param attempt Numero del tentativo
@@ -65,15 +100,17 @@ library GeneticsLib {
         uint256 randomValue,
         uint256 attempt,
         TraitCounts storage counts
-    ) internal view returns (TraitType) {
+    ) internal returns (TraitType) {
         uint256 typeValue = uint256(keccak256(abi.encode(randomValue, attempt, "type"))) % 3;
-        TraitType traitType = TraitType(typeValue);
         
-        if (traitType == TraitType.DOMINANT && counts.dominantCount < MAX_DOMINANT) {
+        if (typeValue == 0 && counts.dominantCount < MAX_DOMINANT) {
+            counts.dominantCount++;
             return TraitType.DOMINANT;
-        } else if (traitType == TraitType.RECESSIVE && counts.recessiveCount < MAX_RECESSIVE) {
+        } else if (typeValue == 1 && counts.recessiveCount < MAX_RECESSIVE) {
+            counts.recessiveCount++;
             return TraitType.RECESSIVE;
-        } else if (traitType == TraitType.MINOR_RECESSIVE && counts.minorRecessiveCount < MAX_MINOR_RECESSIVE) {
+        } else if (typeValue == 2 && counts.minorRecessiveCount < MAX_MINOR_RECESSIVE) {
+            counts.minorRecessiveCount++;
             return TraitType.MINOR_RECESSIVE;
         }
         
@@ -93,18 +130,27 @@ library GeneticsLib {
         uint256 partType,
         TraitCounts storage counts,
         TraitLimits storage limits
-    ) internal view returns (uint256) {
-        uint256 traitId = uint256(keccak256(abi.encode(randomValue, attempt, "trait"))) % 10;
-        
-        (uint256 currentCount, uint256 maxCount) = getTraitCounts(
-            partType,
-            traitId,
-            counts,
-            limits
-        );
-        
-        if (currentCount < maxCount) {
-            return traitId;
+    ) internal returns (uint256) {
+        // Prova tutti i possibili ID dei tratti
+        for (uint256 i = 0; i < 10; i++) {
+            uint256 traitId = (uint256(keccak256(abi.encode(randomValue, attempt, i, "trait"))) + i) % 10;
+            
+            (uint256 currentCount, uint256 maxCount) = getTraitCounts(
+                partType,
+                traitId,
+                counts,
+                limits
+            );
+            
+            if (currentCount < maxCount) {
+                if (partType == 0) counts.headTraitCount[traitId]++;
+                else if (partType == 1) counts.furTraitCount[traitId]++;
+                else if (partType == 2) counts.starTraitCount[traitId]++;
+                else if (partType == 3) counts.weapTraitCount[traitId]++;
+                else counts.accTraitCount[traitId]++;
+                
+                return traitId;
+            }
         }
         
         revert("Nessun ID tratto disponibile per questa parte");
@@ -126,38 +172,7 @@ library GeneticsLib {
     ) internal returns (uint256) {
         TraitType traitType = generateValidTraitType(randomValue, attempt, counts);
         uint256 traitId = generateValidTraitId(randomValue, attempt, partType, counts, limits);
-        
-        updateTraitCounts(partType, traitId, traitType, counts);
-        
         return (uint256(traitType) << 4) | traitId;
-    }
-
-    /// @notice Imposta un campo in un valore a 256 bit
-    /// @param data Dati originali
-    /// @param value Nuovo valore
-    /// @param mask Maschera per il campo
-    /// @param position Posizione del campo
-    /// @return Dati aggiornati
-    function setField(
-        uint256 data,
-        uint256 value,
-        uint256 mask,
-        uint256 position
-    ) internal pure returns (uint256) {
-        return (data & ~(mask << position)) | ((value & mask) << position);
-    }
-
-    /// @notice Estrae un campo da un valore a 256 bit
-    /// @param data Dati da cui estrarre
-    /// @param mask Maschera per il campo
-    /// @param position Posizione del campo
-    /// @return Valore estratto
-    function extractField(
-        uint256 data,
-        uint256 mask,
-        uint256 position
-    ) internal pure returns (uint256) {
-        return (data >> position) & mask;
     }
 
     /// @notice Inizializza i limiti dei tratti

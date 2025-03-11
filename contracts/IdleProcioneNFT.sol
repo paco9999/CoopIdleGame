@@ -5,12 +5,11 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "./test/mocks/VRFConsumerBaseV2Upgradeable.sol";
+import "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./libraries/GeneticsLib.sol";
 import "./libraries/WhitelistLib.sol";
 import "./libraries/FactionClassLib.sol";
@@ -25,12 +24,11 @@ contract IdleProcioneNFT is
     ERC721Upgradeable, 
     OwnableUpgradeable, 
     UUPSUpgradeable,
-    VRFConsumerBaseV2,
+    VRFConsumerBaseV2Upgradeable,
     ReentrancyGuardUpgradeable,
     PausableUpgradeable
 {
     // ========== Libraries ==========
-    using CountersUpgradeable for CountersUpgradeable.Counter;
     using GeneticsLib for *;
     using WhitelistLib for WhitelistLib.WhitelistData;
     using FactionClassLib for FactionClassLib.FactionClassData;
@@ -44,7 +42,7 @@ contract IdleProcioneNFT is
 
     // ========== State Variables ==========
     // Contatori
-    CountersUpgradeable.Counter private _tokenIdCounter;
+    uint256 private _tokenIdCounter;
     uint256 private _randomMintCount;
 
     // Storage
@@ -56,9 +54,9 @@ contract IdleProcioneNFT is
     address public eggContract;
 
     // Chainlink VRF
-    VRFCoordinatorV2Interface private immutable COORDINATOR;
-    bytes32 private immutable keyHash;
-    uint64 private immutable subscriptionId;
+    VRFCoordinatorV2Interface private COORDINATOR;
+    bytes32 private keyHash;
+    uint64 private subscriptionId;
 
     // Stato
     bool public randomMintPaused;
@@ -78,6 +76,8 @@ contract IdleProcioneNFT is
     error InvalidAddress();
     error TransferFailed();
     error UnauthorizedEggContract();
+    error NotWhitelisted();
+    error InsufficientPayment();
 
     // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
@@ -103,14 +103,7 @@ contract IdleProcioneNFT is
 
     // ========== Constructor & Initializer ==========
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor(
-        address _vrfCoordinator,
-        bytes32 _keyHash,
-        uint64 _subscriptionId
-    ) VRFConsumerBaseV2(_vrfCoordinator) {
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        keyHash = _keyHash;
-        subscriptionId = _subscriptionId;
+    constructor() {
         _disableInitializers();
     }
 
@@ -118,11 +111,21 @@ contract IdleProcioneNFT is
         string memory name,
         string memory symbol,
         uint256 _maxFacGen,
-        uint256 _maxClassGen
+        uint256 _maxClassGen,
+        address _vrfCoordinator,
+        bytes32 _keyHash,
+        uint64 _subscriptionId
     ) public initializer {
         __ERC721_init(name, symbol);
         __Ownable_init(msg.sender);
+        __VRFConsumerBaseV2_init(_vrfCoordinator);
+        __ReentrancyGuard_init();
+        __Pausable_init();
         __UUPSUpgradeable_init();
+
+        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
+        keyHash = _keyHash;
+        subscriptionId = _subscriptionId;
 
         factionClassData.setMaxGenLimits(_maxFacGen, _maxClassGen);
         GeneticsLib.initializeTraitLimits(traitLimits);
@@ -157,15 +160,21 @@ contract IdleProcioneNFT is
         if (msg.sender != eggContract) revert UnauthorizedEggContract();
         if (!factionClassData.hasAvailableSlots()) revert NoSlotsAvailable();
         
-        uint256 tokenId = _tokenIdCounter.current();
-        _tokenIdCounter.increment();
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
 
         unchecked {
-            factionClassData.facGen[faction]++;
-            factionClassData.classGen[class]++;
+            factionClassData.factionCount[faction]++;
+            factionClassData.classCount[class]++;
+            factionClassData.facGen++;
+            factionClassData.classGen++;
         }
 
-        _procioneData[tokenId] = StatsLib.createInitialData(genetics, class, faction);
+        uint256 data = StatsLib.createInitialData();
+        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        _procioneData[tokenId] = data;
         _safeMint(to, tokenId);
 
         emit ProcioneMinted(tokenId, to, faction, class, genetics);
@@ -177,29 +186,37 @@ contract IdleProcioneNFT is
         address sender = requestToSender[requestId];
         uint256 randomNumber = randomWords[0];
         
-        FactionClassLib.Faction faction = factionClassData.generateValidFaction(randomNumber);
-        uint256 class = factionClassData.generateValidClass(randomNumber);
+        uint256 faction = uint256(FactionClassLib.generateValidFaction(randomNumber, 0, factionClassData));
+        uint256 class = uint256(FactionClassLib.generateValidClass(randomNumber, 0, factionClassData));
         
         unchecked {
-            factionClassData.facGen[uint256(faction)]++;
-            factionClassData.classGen[class]++;
+            factionClassData.factionCount[faction]++;
+            factionClassData.classCount[class]++;
+            factionClassData.facGen++;
+            factionClassData.classGen++;
             _randomMintCount++;
         }
         
-        uint256 tokenId = _tokenIdCounter.current();
-        _tokenIdCounter.increment();
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
         whitelistData.mintedPerWallet[sender]++;
 
         uint256 genetics = generateCompleteGenetics(randomNumber);
-        _procioneData[tokenId] = StatsLib.createInitialData(genetics, class, uint256(faction));
+        uint256 data = StatsLib.createInitialData();
+        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        _procioneData[tokenId] = data;
         _safeMint(sender, tokenId);
 
-        emit ProcioneMinted(tokenId, sender, uint256(faction), class, genetics);
+        emit ProcioneMinted(tokenId, sender, faction, class, genetics);
     }
 
     function generateCompleteGenetics(uint256 randomNumber) private returns (uint256 genetics) {
+        uint256 mother;
+        uint256 father;
         for (uint256 i = 0; i < 5; i++) {
-            (genetics, uint256 mother, uint256 father) = generateTraitPair(
+            (genetics, mother, father) = generateTraitPair(
                 genetics,
                 randomNumber,
                 i,
@@ -232,7 +249,7 @@ contract IdleProcioneNFT is
         genetics = StatsLib.updateField(genetics, father, GeneticsLib.ALLELE_MASK, fatherPos);
 
         emit TraitGenerated(
-            _tokenIdCounter.current(),
+            _tokenIdCounter,
             partName,
             mother & GeneticsLib.TRAIT_ID_MASK,
             father & GeneticsLib.TRAIT_ID_MASK,
@@ -313,17 +330,26 @@ contract IdleProcioneNFT is
         return _procioneData[tokenId];
     }
 
-    function getProcioneStats(uint256 tokenId) external view returns (StatsLib.Stats memory) {
+    function getProcioneStats(uint256 tokenId) external view returns (
+        uint256 xp,
+        uint256 level,
+        uint256 health,
+        uint256 strength,
+        uint256 speed,
+        uint256 intelligence,
+        uint256 accuracy,
+        uint256 breeding
+    ) {
         if (!_exists(tokenId)) revert TokenNotExists();
         return StatsLib.extractStats(_procioneData[tokenId]);
     }
 
     function getAvailableFactions() external view returns (uint256[5] memory) {
-        return factionClassData.getAvailableFactions();
+        return FactionClassLib.getAvailableFactions(factionClassData);
     }
 
     function getAvailableClasses() external view returns (uint256[6] memory) {
-        return factionClassData.getAvailableClasses();
+        return FactionClassLib.getAvailableClasses(factionClassData);
     }
 
     function getMintInfo(address wallet) external view returns (
@@ -340,9 +366,22 @@ contract IdleProcioneNFT is
     }
 
     function getTotalSupply() external view returns (uint256) {
-        return _tokenIdCounter.current();
+        return _tokenIdCounter;
+    }
+
+    function getMaxGenLimits() external view returns (uint256 maxFacGen, uint256 maxClassGen) {
+        return factionClassData.getMaxGenLimits();
     }
 
     // ========== Override Functions ==========
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /// @notice Verifica se un token esiste
+    /// @param tokenId ID del token da verificare
+    /// @return bool True se il token esiste
+    function _exists(uint256 tokenId) internal view virtual returns (bool) {
+        return _ownerOf(tokenId) != address(0);
+    }
+
+    receive() external payable {}
 } 

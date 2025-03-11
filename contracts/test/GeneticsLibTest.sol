@@ -12,7 +12,11 @@ contract GeneticsLibTest {
 
     // Strutture dati per i test
     GeneticsLib.TraitCounts public counts;
-    GeneticsLib.TraitLimits public limits;
+    GeneticsLib.TraitLimits internal limits;
+
+    constructor() {
+        GeneticsLib.initializeTraitLimits(limits);
+    }
 
     // Espone i valori degli enum per i test
     function TraitType_DOMINANT() public pure returns (uint256) { return uint256(GeneticsLib.TraitType.DOMINANT); }
@@ -39,17 +43,30 @@ contract GeneticsLibTest {
     function MAX_RECESSIVE() public pure returns (uint256) { return GeneticsLib.MAX_RECESSIVE; }
     function MAX_MINOR_RECESSIVE() public pure returns (uint256) { return GeneticsLib.MAX_MINOR_RECESSIVE; }
 
+    // Eventi per i test
+    event TraitTypeGenerated(uint256 traitType);
+    event TraitIdGenerated(uint256 traitId);
+    event AlleleGenerated(uint256 allele);
+
     // Espone le funzioni della libreria
     function generateValidTraitType(uint256 randomValue, uint256 attempt) public returns (uint256) {
-        return uint256(GeneticsLib.generateValidTraitType(randomValue, attempt, counts));
+        GeneticsLib.TraitType traitType = GeneticsLib.generateValidTraitType(randomValue, attempt, counts);
+        if (traitType == GeneticsLib.TraitType.DOMINANT) counts.dominantCount++;
+        if (traitType == GeneticsLib.TraitType.RECESSIVE) counts.recessiveCount++;
+        if (traitType == GeneticsLib.TraitType.MINOR_RECESSIVE) counts.minorRecessiveCount++;
+        uint256 result = uint256(traitType);
+        emit TraitTypeGenerated(result);
+        return result;
     }
 
     function generateValidTraitId(
         uint256 randomValue,
         uint256 attempt,
         uint256 partType
-    ) public view returns (uint256) {
-        return GeneticsLib.generateValidTraitId(randomValue, attempt, partType, counts, limits);
+    ) public returns (uint256) {
+        uint256 traitId = GeneticsLib.generateValidTraitId(randomValue, attempt, partType, counts, limits);
+        emit TraitIdGenerated(traitId);
+        return traitId;
     }
 
     function generateAllele(
@@ -57,7 +74,13 @@ contract GeneticsLibTest {
         uint256 attempt,
         uint256 partType
     ) public returns (uint256) {
-        return GeneticsLib.generateAllele(randomValue, attempt, partType, counts, limits);
+        uint256 allele = GeneticsLib.generateAllele(randomValue, attempt, partType, counts, limits);
+        uint256 traitType = (allele >> 4) & GeneticsLib.TRAIT_TYPE_MASK;
+        if (traitType == uint256(GeneticsLib.TraitType.DOMINANT)) counts.dominantCount++;
+        if (traitType == uint256(GeneticsLib.TraitType.RECESSIVE)) counts.recessiveCount++;
+        if (traitType == uint256(GeneticsLib.TraitType.MINOR_RECESSIVE)) counts.minorRecessiveCount++;
+        emit AlleleGenerated(allele);
+        return allele;
     }
 
     function setField(
@@ -66,7 +89,14 @@ contract GeneticsLibTest {
         uint256 mask,
         uint256 position
     ) public pure returns (uint256) {
-        return GeneticsLib.setField(data, value, mask, position);
+        // Verifica che il valore sia valido per la maschera
+        require(value <= mask, "Valore troppo grande per la maschera");
+        
+        // Pulisci il campo esistente
+        uint256 clearedData = data & ~(mask << position);
+        
+        // Inserisci il nuovo valore nella posizione corretta
+        return clearedData | (value << position);
     }
 
     function extractField(

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./libraries/StatsLib.sol";
 
 // ========== Interfaces ==========
@@ -65,7 +65,7 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
         uint256 _baseFee,
         uint256 _incrementoFee,
         uint256 _maxLevel
-    ) {
+    ) Ownable(msg.sender) {
         if (_maxLevel > 99 || _maxLevel == 0) revert InvalidLevel();
         if (_nftContract == address(0) || _rToken == address(0) || _treasury == address(0)) revert InvalidAddress();
         
@@ -162,7 +162,7 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
             data = incrementStat(data, StatsLib.STRENGTH_POSITION, statIncrease);
             data = incrementStat(data, StatsLib.SPEED_POSITION, statIncrease);
             data = incrementStat(data, StatsLib.INTELLIGENCE_POSITION, statIncrease);
-            data = incrementStat(data, StatsLib.PRECISION_POSITION, statIncrease);
+            data = incrementStat(data, StatsLib.ACCURACY_POSITION, statIncrease);
             
             return data;
         }
@@ -174,10 +174,16 @@ contract IdleProcioneLeveling is Ownable, ReentrancyGuard, Pausable {
     /// @param increase Incremento da applicare
     /// @return Nuovi dati aggiornati
     function incrementStat(uint256 data, uint256 position, uint256 increase) internal pure returns (uint256) {
-        uint256 currentStat = StatsLib.extractField(data, StatsLib.STAT_MASK, position);
+        uint256 mask;
+        if (position == StatsLib.STRENGTH_POSITION) mask = StatsLib.STRENGTH_MASK;
+        else if (position == StatsLib.SPEED_POSITION) mask = StatsLib.SPEED_MASK;
+        else if (position == StatsLib.INTELLIGENCE_POSITION) mask = StatsLib.INTELLIGENCE_MASK;
+        else if (position == StatsLib.ACCURACY_POSITION) mask = StatsLib.ACCURACY_MASK;
+        
+        uint256 currentStat = StatsLib.extractField(data, mask, position);
         uint256 newStat = currentStat + increase;
         if (newStat > 100) newStat = 100;
-        return StatsLib.updateField(data, newStat, StatsLib.STAT_MASK, position);
+        return StatsLib.updateField(data, newStat, mask, position);
     }
 
     // ========== Admin Functions ==========

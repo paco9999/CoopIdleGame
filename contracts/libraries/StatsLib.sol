@@ -15,6 +15,9 @@ library StatsLib {
     uint256 constant INTELLIGENCE_MASK = 0xFF; // 40-47
     uint256 constant ACCURACY_MASK = 0xFF;     // 48-55
     uint256 constant BREEDING_MASK = 0xFF;     // 56-63
+    uint256 constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFF; // 64-127
+    uint256 constant CLASS_MASK = 0xFF;        // 128-135
+    uint256 constant FACTION_MASK = 0xFF;      // 136-143
 
     // Posizioni dei campi nel valore a 256 bit
     uint256 constant XP_POSITION = 0;
@@ -25,6 +28,9 @@ library StatsLib {
     uint256 constant INTELLIGENCE_POSITION = 40;
     uint256 constant ACCURACY_POSITION = 48;
     uint256 constant BREEDING_POSITION = 56;
+    uint256 constant GENETICS_POSITION = 64;
+    uint256 constant CLASS_POSITION = 128;
+    uint256 constant FACTION_POSITION = 136;
 
     // Valori iniziali delle statistiche
     uint256 constant INITIAL_XP = 0;
