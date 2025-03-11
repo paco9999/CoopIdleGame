@@ -6,11 +6,13 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 /// @title VRFConsumerBaseV2Upgradeable
 /// @notice Versione upgradeable del contratto VRFConsumerBaseV2
 abstract contract VRFConsumerBaseV2Upgradeable is Initializable {
+    error OnlyCoordinatorCanFulfill();
+
     address private vrfCoordinator;
 
     /**
-     * @notice Inizializza il contratto
-     * @param _vrfCoordinator - address of VRFCoordinator contract
+     * @notice Costruttore che imposta l'indirizzo del coordinatore
+     * @dev Deve essere chiamato dall'implementazione
      */
     function __VRFConsumerBaseV2_init(address _vrfCoordinator) internal onlyInitializing {
         vrfCoordinator = _vrfCoordinator;
@@ -18,20 +20,20 @@ abstract contract VRFConsumerBaseV2Upgradeable is Initializable {
 
     /**
      * @notice Funzione di callback chiamata dal VRF Coordinator
-     * @param requestId - id della richiesta
-     * @param randomWords - array di numeri casuali
+     * @dev Deve essere implementata dal contratto che eredita
      */
+    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal virtual;
+
     function rawFulfillRandomWords(uint256 requestId, uint256[] memory randomWords) external {
-        require(msg.sender == vrfCoordinator, "Only VRFCoordinator can fulfill");
+        if (msg.sender != vrfCoordinator) {
+            revert OnlyCoordinatorCanFulfill();
+        }
         fulfillRandomWords(requestId, randomWords);
     }
 
     /**
-     * @notice Funzione da implementare per gestire i numeri casuali
-     * @param requestId - id della richiesta
-     * @param randomWords - array di numeri casuali
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
      */
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal virtual;
-
     uint256[49] private __gap;
 } 

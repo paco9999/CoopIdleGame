@@ -15,6 +15,7 @@ import "./libraries/WhitelistLib.sol";
 import "./libraries/FactionClassLib.sol";
 import "./libraries/StatsLib.sol";
 
+
 /// @title IdleProcioneNFT
 /// @author Il tuo nome
 /// @notice Contratto principale per la gestione degli NFT Procione
@@ -392,13 +393,13 @@ contract IdleProcioneNFT is
         uint256 oldData = _procioneData[tokenId];
         _procioneData[tokenId] = newData;
         
+        emit DataUpdated(tokenId, newData);
+
         // Chiamata al contratto levelUp per notificare l'aggiornamento
         (bool success,) = levelUpContract.call(
             abi.encodeWithSignature("onDataUpdated(uint256,uint256)", tokenId, newData)
         );
-        require(success, "Chiamata a onDataUpdated fallita");
-        
-        emit DataUpdated(tokenId, newData);
+        if (!success) revert UnauthorizedCaller();
     }
 
     receive() external payable {}

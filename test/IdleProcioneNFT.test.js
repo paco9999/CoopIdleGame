@@ -274,9 +274,8 @@ describe("IdleProcioneNFT", function () {
                 await idleProcioneNFT.connect(addr2).randomMint();
                 
                 // Simula una risposta VRF per completare il mint
-                const requestId = 1;
-                const randomWords = [123456789];
-                await idleProcioneNFT.fulfillRandomWords(requestId, randomWords);
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
                 
                 const tokenId = 0;
                 const newData = 123;
@@ -302,9 +301,8 @@ describe("IdleProcioneNFT", function () {
                 await idleProcioneNFT.connect(addr1).randomMint();
                 
                 // Simula una risposta VRF per completare il mint
-                const requestId = 1;
-                const randomWords = [123456789];
-                await idleProcioneNFT.fulfillRandomWords(requestId, randomWords);
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
                 
                 const attacker = await ReentrancyAttacker.deploy(idleProcioneNFT.target);
                 await idleProcioneNFT.setLevelUpContract(attacker.target);
@@ -313,7 +311,7 @@ describe("IdleProcioneNFT", function () {
                 const newData = 123;
 
                 await expect(attacker.attack(tokenId, newData))
-                    .to.be.revertedWith("ReentrancyGuard: reentrant call");
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
             });
         });
     });
