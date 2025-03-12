@@ -53,6 +53,8 @@ contract IdleProcioneNFT is
     // Contratti autorizzati
     address public levelUpContract;
     address public eggContract;
+    address public professionsContract;
+    uint256 public professionBaseStep = 100;
 
     // Chainlink VRF
     VRFCoordinatorV2Interface private COORDINATOR;
@@ -79,10 +81,20 @@ contract IdleProcioneNFT is
     error UnauthorizedEggContract();
     error NotWhitelisted();
     error InsufficientPayment();
+    error InsufficientLevel();
+    error InsufficientBreeding();
+    error ProfessionAlreadySet();
+    error InsufficientExp();
+    error NotTokenOwner();
 
     // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
     event LevelUpContractUpdated(address indexed oldContract, address indexed newContract);
+    event ProfessionsContractUpdated(address indexed oldContract, address indexed newContract);
+    event ProfessionBaseStepUpdated(uint256 oldValue, uint256 newValue);
+    event ProfessionSet(uint256 indexed tokenId, uint256 profession);
+    event ProfessionLevelUp(uint256 indexed tokenId, uint256 newLevel);
+    event ProfessionExpAdded(uint256 indexed tokenId, uint256 expAdded);
     event RandomMintRequested(address indexed sender, uint256 requestId);
     event ProcioneMinted(
         uint256 indexed tokenId,
@@ -308,6 +320,80 @@ contract IdleProcioneNFT is
         emit EggContractUpdated(_newAddress);
     }
 
+    function setProfessionsContract(address _newAddress) external onlyOwner {
+        if (_newAddress == address(0)) revert InvalidAddress();
+        address oldContract = professionsContract;
+        professionsContract = _newAddress;
+        emit ProfessionsContractUpdated(oldContract, _newAddress);
+    }
+
+    function setProfessionBaseStep(uint256 _newValue) external onlyOwner {
+        uint256 oldValue = professionBaseStep;
+        professionBaseStep = _newValue;
+        emit ProfessionBaseStepUpdated(oldValue, _newValue);
+    }
+
+    function setProfession(uint256 tokenId, StatsLib.Professions profession) external {
+        if (msg.sender != professionsContract) revert UnauthorizedCaller();
+        if (!_exists(tokenId)) revert TokenNotExists();
+        
+        uint256 data = _procioneData[tokenId];
+        if (StatsLib.getProfession(data) != StatsLib.Professions.NONE) revert ProfessionAlreadySet();
+        
+        // Verifica requisiti
+        if (StatsLib.getLevel(data) < 5) revert InsufficientLevel();
+        
+        // Verifica breeding count
+        IIdleProcioneBreeding breedingContract = IIdleProcioneBreeding(eggContract);
+        if (breedingContract.getBreedCount(tokenId) < 2) revert InsufficientBreeding();
+        
+        // Imposta professione e valori iniziali
+        data = StatsLib.setProfession(data, profession);
+        data = StatsLib.setProfessionLevel(data, 1);
+        data = StatsLib.setProfessionExp(data, 0);
+        
+        _procioneData[tokenId] = data;
+        emit ProfessionSet(tokenId, uint256(profession));
+        emit DataUpdated(tokenId, data);
+    }
+
+    function setProfessionExp(uint256 tokenId, uint256 expToAdd) external {
+        if (msg.sender != professionsContract) revert UnauthorizedCaller();
+        if (!_exists(tokenId)) revert TokenNotExists();
+        
+        uint256 data = _procioneData[tokenId];
+        uint256 currentExp = StatsLib.getProfessionExp(data);
+        uint256 newExp = currentExp + expToAdd;
+        if (newExp > 65535) newExp = 65535;
+        
+        data = StatsLib.setProfessionExp(data, newExp);
+        _procioneData[tokenId] = data;
+        
+        emit ProfessionExpAdded(tokenId, expToAdd);
+        emit DataUpdated(tokenId, data);
+    }
+
+    function professionLevelUp(uint256 tokenId) external {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        if (_ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        
+        uint256 data = _procioneData[tokenId];
+        uint256 currentLevel = StatsLib.getProfessionLevel(data);
+        uint256 currentExp = StatsLib.getProfessionExp(data);
+        
+        // Calcola exp necessaria per il prossimo livello
+        uint256 requiredExp = professionBaseStep * ((currentLevel + 1) ** 2);
+        if (currentExp < requiredExp) revert InsufficientExp();
+        
+        // Aggiorna livello e resetta exp
+        data = StatsLib.setProfessionLevel(data, currentLevel + 1);
+        data = StatsLib.setProfessionExp(data, 0);
+        
+        _procioneData[tokenId] = data;
+        emit ProfessionLevelUp(tokenId, currentLevel + 1);
+        emit DataUpdated(tokenId, data);
+    }
+
     function pause() external onlyOwner {
         _pause();
     }
@@ -373,6 +459,26 @@ contract IdleProcioneNFT is
 
     function getMaxGenLimits() external view returns (uint256 maxFacGen, uint256 maxClassGen) {
         return factionClassData.getMaxGenLimits();
+    }
+
+    function getProfessionInfo(uint256 tokenId) external view returns (
+        StatsLib.Professions profession,
+        uint256 level,
+        uint256 exp
+    ) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        uint256 data = _procioneData[tokenId];
+        return (
+            StatsLib.getProfession(data),
+            StatsLib.getProfessionLevel(data),
+            StatsLib.getProfessionExp(data)
+        );
+    }
+
+    function getRequiredExpForNextLevel(uint256 tokenId) external view returns (uint256) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        uint256 currentLevel = StatsLib.getProfessionLevel(_procioneData[tokenId]);
+        return professionBaseStep * ((currentLevel + 1) ** 2);
     }
 
     // ========== Override Functions ==========

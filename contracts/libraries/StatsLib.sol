@@ -5,32 +5,58 @@ pragma solidity ^0.8.20;
 /// @notice Libreria per la gestione delle statistiche dei procioni
 /// @dev Implementa un sistema di bit-packing per ottimizzare lo storage delle statistiche
 library StatsLib {
+    // ========== Enums ==========
+    enum Professions {
+        NONE,           // 0
+        ARTIGIANO,      // 1
+        MERCANTE,       // 2
+        MINATORE,       // 3
+        ALCHIMISTA,     // 4
+        PESCATORE,      // 5
+        CACCIATORE,     // 6
+        CUOCO,          // 7
+        GIARDINIERE,    // 8
+        BOSCAIOLO,      // 9
+        FABBRO,         // 10
+        SARTO,          // 11
+        INGEGNERE,      // 12
+        MAGO,           // 13
+        GUERRIERO,      // 14
+        ESPLORATORE     // 15
+    }
+
     // ========== Constants ==========
-    // Maschere per i campi delle statistiche (ogni campo usa 8 bit)
-    uint256 constant XP_MASK = 0xFF;           // 0-7
-    uint256 constant LEVEL_MASK = 0xFF;        // 8-15
-    uint256 constant HEALTH_MASK = 0xFF;       // 16-23
-    uint256 constant STRENGTH_MASK = 0xFF;     // 24-31
-    uint256 constant SPEED_MASK = 0xFF;        // 32-39
-    uint256 constant INTELLIGENCE_MASK = 0xFF; // 40-47
-    uint256 constant ACCURACY_MASK = 0xFF;     // 48-55
+    // Maschere per i campi delle statistiche
+    uint256 constant XP_MASK = 0x1FFFF;        // 0-16 (17 bit)
+    uint256 constant LEVEL_MASK = 0xFF;        // 17-24
+    uint256 constant HEALTH_MASK = 0xFF;       // 25-32
+    uint256 constant STRENGTH_MASK = 0xFF;     // 33-40
+    uint256 constant SPEED_MASK = 0xFF;        // 41-48
+    uint256 constant INTELLIGENCE_MASK = 0xFF; // 49-56
+    uint256 constant ACCURACY_MASK = 0xFF;     // 57-64
     uint256 constant BREEDING_MASK = 0xFF;     // 80-87
     uint256 public constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
     uint256 constant CLASS_MASK = 0xFF;        // 128-135
     uint256 constant FACTION_MASK = 0xFF;      // 136-143
+    uint256 constant PROFESSION_MASK = 0xF;    // 144-147 (4 bit)
+    uint256 constant PROFESSIONLVL_MASK = 0xF; // 148-151 (4 bit)
+    uint256 constant PROFESSIONEXP_MASK = 0xFFFF; // 152-167 (16 bit)
 
     // Posizioni dei campi nel valore a 256 bit
     uint256 constant XP_POSITION = 0;
-    uint256 constant LEVEL_POSITION = 8;
-    uint256 constant HEALTH_POSITION = 16;
-    uint256 constant STRENGTH_POSITION = 24;
-    uint256 constant SPEED_POSITION = 32;
-    uint256 constant INTELLIGENCE_POSITION = 40;
-    uint256 constant ACCURACY_POSITION = 48;
+    uint256 constant LEVEL_POSITION = 17;
+    uint256 constant HEALTH_POSITION = 25;
+    uint256 constant STRENGTH_POSITION = 33;
+    uint256 constant SPEED_POSITION = 41;
+    uint256 constant INTELLIGENCE_POSITION = 49;
+    uint256 constant ACCURACY_POSITION = 57;
     uint256 constant BREEDING_POSITION = 80;
     uint256 public constant GENETICS_POSITION = 64;
     uint256 constant CLASS_POSITION = 128;
     uint256 constant FACTION_POSITION = 136;
+    uint256 constant PROFESSION_POSITION = 144;
+    uint256 constant PROFESSIONLVL_POSITION = 148;
+    uint256 constant PROFESSIONEXP_POSITION = 152;
 
     // Valori iniziali delle statistiche
     uint256 constant INITIAL_XP = 0;
@@ -41,7 +67,7 @@ library StatsLib {
 
     // Costanti per i limiti
     uint256 public constant MAX_LEVEL = 100;
-    uint256 public constant MAX_XP = 1000000;
+    uint256 public constant MAX_XP = 90000;
     uint256 public constant MAX_BREEDING_SLOTS = 5;
     uint256 public constant MAX_BREEDING_COUNT = 10;
     uint256 public constant MAX_RARITY = 5;
@@ -172,5 +198,33 @@ library StatsLib {
         breedingSlots = getBreedingSlots(stats);
         breedingCount = getBreedingCount(stats);
         rarity = getRarity(stats);
+    }
+
+    // Funzioni per le professioni
+    function getProfession(uint256 stats) internal pure returns (Professions) {
+        return Professions(extractField(stats, PROFESSION_MASK, PROFESSION_POSITION));
+    }
+
+    function getProfessionLevel(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, PROFESSIONLVL_MASK, PROFESSIONLVL_POSITION);
+    }
+
+    function getProfessionExp(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, PROFESSIONEXP_MASK, PROFESSIONEXP_POSITION);
+    }
+
+    function setProfession(uint256 stats, Professions profession) internal pure returns (uint256) {
+        require(uint256(profession) <= 15, "Profession value too high");
+        return updateField(stats, uint256(profession), PROFESSION_MASK, PROFESSION_POSITION);
+    }
+
+    function setProfessionLevel(uint256 stats, uint256 level) internal pure returns (uint256) {
+        require(level <= 15, "Profession level too high");
+        return updateField(stats, level, PROFESSIONLVL_MASK, PROFESSIONLVL_POSITION);
+    }
+
+    function setProfessionExp(uint256 stats, uint256 exp) internal pure returns (uint256) {
+        require(exp <= 65535, "Profession exp too high");
+        return updateField(stats, exp, PROFESSIONEXP_MASK, PROFESSIONEXP_POSITION);
     }
 } 
