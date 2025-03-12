@@ -346,53 +346,20 @@ contract IdleProcioneNFT is
         if (!_exists(tokenId)) revert TokenNotExists();
         
         uint256 data = _procioneData[tokenId];
-        _checkProfessionRequirements(tokenId, data);
-        
-        // Imposta professione e valori iniziali
         data = StatsLib.setProfession(data, profession);
         data = StatsLib.setProfessionLevel(data, INITIAL_PROFESSION_LEVEL);
         data = StatsLib.setProfessionExp(data, INITIAL_PROFESSION_EXP);
         
         _procioneData[tokenId] = data;
-        emit ProfessionSet(tokenId, uint256(profession));
         emit DataUpdated(tokenId, data);
     }
 
-    function setProfessionExp(uint256 tokenId, uint256 expToAdd) external {
-        if (msg.sender != professionsContract) revert UnauthorizedCaller();
+    function updateProcioneData(uint256 tokenId, uint256 newData) external {
+        if (msg.sender != professionsContract && msg.sender != levelUpContract) revert UnauthorizedCaller();
         if (!_exists(tokenId)) revert TokenNotExists();
         
-        uint256 data = _procioneData[tokenId];
-        uint256 currentExp = StatsLib.getProfessionExp(data);
-        uint256 newExp = currentExp + expToAdd;
-        if (newExp > 65535) newExp = 65535;
-        
-        data = StatsLib.setProfessionExp(data, newExp);
-        _procioneData[tokenId] = data;
-        
-        emit ProfessionExpAdded(tokenId, expToAdd);
-        emit DataUpdated(tokenId, data);
-    }
-
-    function professionLevelUp(uint256 tokenId) external {
-        if (!_exists(tokenId)) revert TokenNotExists();
-        if (_ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
-        
-        uint256 data = _procioneData[tokenId];
-        uint256 currentLevel = StatsLib.getProfessionLevel(data);
-        uint256 currentExp = StatsLib.getProfessionExp(data);
-        
-        // Calcola exp necessaria per il prossimo livello
-        uint256 requiredExp = _calculateRequiredExp(currentLevel);
-        if (currentExp < requiredExp) revert InsufficientExp();
-        
-        // Aggiorna livello e resetta exp
-        data = StatsLib.setProfessionLevel(data, currentLevel + 1);
-        data = StatsLib.setProfessionExp(data, INITIAL_PROFESSION_EXP);
-        
-        _procioneData[tokenId] = data;
-        emit ProfessionLevelUp(tokenId, currentLevel + 1);
-        emit DataUpdated(tokenId, data);
+        _procioneData[tokenId] = newData;
+        emit DataUpdated(tokenId, newData);
     }
 
     function pause() external onlyOwner {
@@ -487,7 +454,7 @@ contract IdleProcioneNFT is
     function getRequiredExpForNextLevel(uint256 tokenId) external view returns (uint256) {
         if (!_exists(tokenId)) revert TokenNotExists();
         uint256 currentLevel = StatsLib.getProfessionLevel(_procioneData[tokenId]);
-        return _calculateRequiredExp(currentLevel);
+        return professionBaseStep * ((currentLevel + 1) ** 2);
     }
 
     // ========== Override Functions ==========
@@ -498,43 +465,6 @@ contract IdleProcioneNFT is
     /// @return bool True se il token esiste
     function _exists(uint256 tokenId) internal view virtual returns (bool) {
         return _ownerOf(tokenId) != address(0);
-    }
-
-    /// @notice Verifica i requisiti per ottenere una professione
-    /// @param tokenId ID del token da verificare
-    /// @param data Dati del procione
-    function _checkProfessionRequirements(uint256 tokenId, uint256 data) internal view {
-        // Verifica che il procione non abbia già una professione
-        if (StatsLib.getProfession(data) != StatsLib.Professions.NONE) revert ProfessionAlreadySet();
-        
-        // Verifica il livello minimo
-        if (StatsLib.getLevel(data) < MIN_LEVEL_FOR_PROFESSION) revert InsufficientLevel();
-        
-        // Verifica il numero minimo di breeding
-        IIdleProcioneBreeding breedingContract = IIdleProcioneBreeding(eggContract);
-        if (breedingContract.getBreedCount(tokenId) < MIN_BREEDING_FOR_PROFESSION) revert InsufficientBreeding();
-    }
-
-    /// @notice Calcola l'esperienza richiesta per il prossimo livello
-    /// @param currentLevel Livello corrente della professione
-    /// @return uint256 Esperienza richiesta per il prossimo livello
-    function _calculateRequiredExp(uint256 currentLevel) internal view returns (uint256) {
-        return professionBaseStep * ((currentLevel + 1) ** 2);
-    }
-
-    function updateProcioneData(uint256 tokenId, uint256 newData) external nonReentrant {
-        if (levelUpContract == address(0)) revert UnauthorizedCaller();
-        if (msg.sender != levelUpContract) revert UnauthorizedCaller();
-        if (!_exists(tokenId)) revert TokenNotExists();
-        
-        _procioneData[tokenId] = newData;
-        emit DataUpdated(tokenId, newData);
-
-        // Chiamata al contratto levelUp per notificare l'aggiornamento
-        (bool success,) = levelUpContract.call(
-            abi.encodeWithSignature("onDataUpdated(uint256,uint256)", tokenId, newData)
-        );
-        if (!success) revert UnauthorizedCaller();
     }
 
     receive() external payable {}

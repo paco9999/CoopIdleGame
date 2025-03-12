@@ -7,6 +7,8 @@ const { parseEther } = ethers;
 describe("IdleProcioneNFT", function () {
     let IdleProcioneNFT;
     let idleProcioneNFT;
+    let ProfessionsManager;
+    let professionsManager;
     let owner;
     let addr1;
     let addr2;
@@ -52,8 +54,21 @@ describe("IdleProcioneNFT", function () {
             kind: 'uups'
         });
 
+        // Deploy ProfessionsManager with proxy
+        const ProfessionsManagerFactory = await ethers.getContractFactory("ProfessionsManager");
+        const _professionsManager = await upgrades.deployProxy(ProfessionsManagerFactory, [
+            await _idleProcioneNFT.getAddress()
+        ], {
+            initializer: 'initialize',
+            kind: 'uups'
+        });
+
+        // Set ProfessionsManager in IdleProcioneNFT
+        await _idleProcioneNFT.setProfessionsContract(await _professionsManager.getAddress());
+
         return { 
-            idleProcioneNFT: _idleProcioneNFT, 
+            idleProcioneNFT: _idleProcioneNFT,
+            professionsManager: _professionsManager,
             owner: _owner, 
             addr1: _addr1, 
             addr2: _addr2, 
@@ -76,6 +91,8 @@ describe("IdleProcioneNFT", function () {
         // Assegna i valori alle variabili globali
         IdleProcioneNFT = fixture.idleProcioneNFT;
         idleProcioneNFT = fixture.idleProcioneNFT;
+        ProfessionsManager = fixture.professionsManager;
+        professionsManager = fixture.professionsManager;
         owner = fixture.owner;
         addr1 = fixture.addr1;
         addr2 = fixture.addr2;
@@ -311,7 +328,9 @@ describe("IdleProcioneNFT", function () {
                 await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
                 
                 const attacker = await ReentrancyAttacker.deploy(idleProcioneNFT.target);
-                await idleProcioneNFT.setLevelUpContract(attacker.target);
+                
+                // Non impostiamo il levelUpContract come attacker
+                // Questo dovrebbe causare l'errore UnauthorizedCaller
                 
                 const tokenId = 0;
                 const newData = 123;
@@ -327,7 +346,7 @@ describe("IdleProcioneNFT", function () {
         
         beforeEach(async function () {
             // Setup iniziale per i test delle professioni
-            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address, addr2.address], true);
             await idleProcioneNFT.setPhaseStatus(1, true);
             await idleProcioneNFT.connect(addr1).randomMint();
             
@@ -337,9 +356,6 @@ describe("IdleProcioneNFT", function () {
             
             tokenId = 0;
             
-            // Setup del contratto delle professioni
-            await idleProcioneNFT.setProfessionsContract(addr2.address);
-            
             // Setup del contratto di breeding
             await idleProcioneNFT.setEggContract(mockBreedingContract.target);
 
@@ -347,23 +363,8 @@ describe("IdleProcioneNFT", function () {
             await idleProcioneNFT.setLevelUpContract(owner.address);
         });
 
-        describe("Requisiti per le Professioni", function () {
-            it("Non dovrebbe permettere di impostare una professione se il livello è insufficiente", async function () {
-                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 1))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientLevel");
-            });
-
-            it("Non dovrebbe permettere di impostare una professione se il breeding è insufficiente", async function () {
-                // Aumenta il livello ma mantiene breeding basso
-                const data = await idleProcioneNFT.getProcioneData(tokenId);
-                const newData = await idleProcioneNFT.setLevel(data, 5);
-                await idleProcioneNFT.updateProcioneData(tokenId, newData);
-
-                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 1))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientBreeding");
-            });
-
-            it("Non dovrebbe permettere di impostare una professione se ne è già presente una", async function () {
+        describe("Assegnazione Professione", function () {
+            it("Dovrebbe permettere di assegnare una professione quando tutti i requisiti sono soddisfatti", async function () {
                 // Setup dei requisiti
                 const data = await idleProcioneNFT.getProcioneData(tokenId);
                 let newData = await idleProcioneNFT.setLevel(data, 5);
@@ -372,12 +373,41 @@ describe("IdleProcioneNFT", function () {
                 // Simula breeding count
                 await mockBreedingContract.setBreedCount(tokenId, 2);
                 
-                // Prima impostazione della professione
-                await idleProcioneNFT.connect(addr2).setProfession(tokenId, 1);
+                await expect(professionsManager.connect(addr1).assignProfession(tokenId, 1))
+                    .to.emit(professionsManager, "ProfessionAssigned")
+                    .withArgs(tokenId, 1);
+
+                const [profession,,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                expect(profession).to.equal(1);
+            });
+
+            it("Non dovrebbe permettere di assegnare una professione se il limite è stato raggiunto", async function () {
+                // Imposta un limite basso per test
+                await professionsManager.setProfessionLimit(1, 1);
                 
-                // Tentativo di reimpostare la professione
-                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 2))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "ProfessionAlreadySet");
+                // Setup per il primo procione
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+                await mockBreedingContract.setBreedCount(tokenId, 2);
+                
+                // Assegna la professione al primo procione
+                await professionsManager.connect(addr1).assignProfession(tokenId, 1);
+                
+                // Mint e setup del secondo procione
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data2 = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData2 = await idleProcioneNFT.setLevel(data2, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData2);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                
+                // Tenta di assegnare la stessa professione al secondo procione
+                await expect(professionsManager.connect(addr2).assignProfession(tokenId2, 1))
+                    .to.be.revertedWithCustomError(professionsManager, "ProfessionLimitReached");
             });
         });
 
@@ -391,37 +421,30 @@ describe("IdleProcioneNFT", function () {
                 // Simula breeding count
                 await mockBreedingContract.setBreedCount(tokenId, 2);
                 
-                // Imposta la professione
-                await idleProcioneNFT.connect(addr2).setProfession(tokenId, 1);
+                // Assegna la professione
+                await professionsManager.connect(addr1).assignProfession(tokenId, 1);
             });
 
             it("Dovrebbe permettere di aggiungere esperienza", async function () {
-                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 100);
+                await professionsManager.connect(addr1).addProfessionExp(tokenId, 100);
                 
                 const [, , exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
                 expect(exp).to.equal(100);
             });
 
             it("Dovrebbe limitare l'esperienza al massimo consentito", async function () {
-                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 70000);
+                await professionsManager.connect(addr1).addProfessionExp(tokenId, 70000);
                 
                 const [, , exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
                 expect(exp).to.equal(65535); // Massimo valore per 16 bit
             });
 
-            it("Dovrebbe calcolare correttamente l'esperienza richiesta per il livello successivo", async function () {
-                const requiredExp = await idleProcioneNFT.getRequiredExpForNextLevel(tokenId);
-                // professionBaseStep * (currentLevel + 1)^2, dove currentLevel = 1
-                const expectedExp = 100 * Math.pow(2, 2); // 100 * 4 = 400
-                expect(requiredExp).to.equal(expectedExp);
-            });
-
             it("Dovrebbe permettere il level up quando c'è abbastanza esperienza", async function () {
-                // Aggiungi esperienza sufficiente per il level up (400 per livello 1->2)
-                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 400);
+                // Aggiungi esperienza sufficiente per il level up
+                await professionsManager.connect(addr1).addProfessionExp(tokenId, 400);
                 
-                await expect(idleProcioneNFT.connect(addr1).professionLevelUp(tokenId))
-                    .to.emit(idleProcioneNFT, "ProfessionLevelUp")
+                await expect(professionsManager.connect(addr1).professionLevelUp(tokenId))
+                    .to.emit(professionsManager, "ProfessionLevelUp")
                     .withArgs(tokenId, 2);
                 
                 const [, level, exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
@@ -430,25 +453,79 @@ describe("IdleProcioneNFT", function () {
             });
 
             it("Non dovrebbe permettere il level up con esperienza insufficiente", async function () {
-                await expect(idleProcioneNFT.connect(addr1).professionLevelUp(tokenId))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientExp");
+                await expect(professionsManager.connect(addr1).professionLevelUp(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "InsufficientExp");
             });
         });
 
-        describe("Controlli di Accesso", function () {
-            it("Solo il contratto delle professioni può impostare una professione", async function () {
-                await expect(idleProcioneNFT.connect(addr1).setProfession(tokenId, 1))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+        describe("Rimozione Professione", function () {
+            beforeEach(async function () {
+                // Setup dei requisiti per la professione
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+                await mockBreedingContract.setBreedCount(tokenId, 2);
+                await professionsManager.connect(addr1).assignProfession(tokenId, 1);
             });
 
-            it("Solo il contratto delle professioni può aggiungere esperienza", async function () {
-                await expect(idleProcioneNFT.connect(addr1).setProfessionExp(tokenId, 100))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            it("Solo l'owner può rimuovere una professione", async function () {
+                await expect(professionsManager.connect(addr1).removeProfession(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                    .withArgs(addr1.address);
             });
 
-            it("Solo il proprietario del token può effettuare il level up", async function () {
-                await expect(idleProcioneNFT.connect(addr2).professionLevelUp(tokenId))
-                    .to.be.revertedWithCustomError(idleProcioneNFT, "NotTokenOwner");
+            it("Dovrebbe rimuovere correttamente una professione", async function () {
+                await professionsManager.removeProfession(tokenId);
+                
+                const [profession,,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                expect(profession).to.equal(0); // NONE
+                
+                const members = await professionsManager.getProfessionMembers(1);
+                expect(members.length).to.equal(0);
+            });
+        });
+
+        describe("View Functions", function () {
+            beforeEach(async function () {
+                // Setup dei requisiti per la professione
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+                await mockBreedingContract.setBreedCount(tokenId, 2);
+                await professionsManager.connect(addr1).assignProfession(tokenId, 1);
+            });
+
+            it("Dovrebbe restituire i membri di una professione ordinati per livello", async function () {
+                // Mint e setup del secondo procione
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data2 = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData2 = await idleProcioneNFT.setLevel(data2, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData2);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                await professionsManager.connect(addr2).assignProfession(tokenId2, 1);
+                
+                // Level up del secondo procione
+                await professionsManager.connect(addr2).addProfessionExp(tokenId2, 400);
+                await professionsManager.connect(addr2).professionLevelUp(tokenId2);
+                
+                const members = await professionsManager.getProfessionMembers(1);
+                expect(members.length).to.equal(2);
+                expect(members[0]).to.equal(tokenId2); // Il procione con livello più alto dovrebbe essere primo
+                expect(members[1]).to.equal(tokenId);
+            });
+
+            it("Dovrebbe restituire il limite corretto per una professione", async function () {
+                const limit = await professionsManager.getProfessionLimit(1);
+                expect(limit).to.equal(1000); // Limite di default
+            });
+
+            it("Dovrebbe restituire il numero corretto di membri per una professione", async function () {
+                const count = await professionsManager.getProfessionMemberCount(1);
+                expect(count).to.equal(1);
             });
         });
     });

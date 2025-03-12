@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "../libraries/StatsLib.sol";
+
 /// @title IIdleProcioneNFT
 /// @notice Interfaccia per il contratto principale degli NFT Procione
 interface IIdleProcioneNFT {
@@ -32,4 +34,16 @@ interface IIdleProcioneNFT {
     /// @param parent2Id ID del secondo genitore
     /// @return uint256 ID del nuovo procione
     function breed(uint256 parent1Id, uint256 parent2Id) external returns (uint256);
+
+    /// @notice Restituisce le informazioni di professione di un procione
+    /// @param tokenId ID del token
+    /// @return StatsLib.Professions Professione del procione
+    /// @return uint256 Livello della professione
+    /// @return uint256 XP accumulato per la professione
+    function getProfessionInfo(uint256 tokenId) external view returns (StatsLib.Professions, uint256, uint256);
+
+    /// @notice Aggiorna la professione di un procione
+    /// @param tokenId ID del token
+    /// @param profession Nuova professione del procione
+    function setProfession(uint256 tokenId, StatsLib.Professions profession) external;
 } 
