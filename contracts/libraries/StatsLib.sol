@@ -8,8 +8,8 @@ library StatsLib {
     // ========== Enums ==========
     enum Professions {
         NONE,           // 0
-        ARTIGIANO,      // 1
-        MERCANTE,       // 2
+        ARTISAN,        // 1
+        MEDIC,          // 2
         MINATORE,       // 3
         ALCHIMISTA,     // 4
         PESCATORE,      // 5
