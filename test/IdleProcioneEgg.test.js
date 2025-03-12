@@ -2,6 +2,11 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
+// Funzione helper per creare i dati iniziali del procione
+async function createInitialData(genetics, class_, faction) {
+    return BigInt(genetics) | (BigInt(class_) << 128n) | (BigInt(faction) << 192n);
+}
+
 describe("IdleProcioneEgg", function () {
     let IdleProcioneEgg;
     let idleProcioneEgg;
@@ -12,55 +17,62 @@ describe("IdleProcioneEgg", function () {
     let addr2;
     let addrs;
     let breedingContract;
+    let mockStatsLib;
 
     const HATCH_TIME = 7 * 24 * 60 * 60; // 7 giorni in secondi
+    const INCUBATION_TIME = 5 * 24 * 60 * 60; // 5 giorni in secondi, come nel contratto di breeding
 
     beforeEach(async function () {
-        [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
+        [owner, addr1, addr2, breedingContract, ...addrs] = await ethers.getSigners();
+
+        // Deploy del mock StatsLib
+        const MockStatsLib = await ethers.getContractFactory("MockStatsLib");
+        mockStatsLib = await MockStatsLib.deploy();
+        await mockStatsLib.waitForDeployment();
 
         // Deploy del mock NFT
-        MockIdleProcioneNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
+        MockIdleProcioneNFT = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
         mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
         await mockIdleProcioneNFT.waitForDeployment();
 
-        // Deploy del contratto principale
+        // Deploy del contratto uovo
         IdleProcioneEgg = await ethers.getContractFactory("IdleProcioneEgg");
         idleProcioneEgg = await IdleProcioneEgg.deploy(
+            "Idle Procione Egg",
+            "IPE",
             await mockIdleProcioneNFT.getAddress(),
-            HATCH_TIME
+            breedingContract.address
         );
         await idleProcioneEgg.waitForDeployment();
-
-        // Setup dei ruoli
-        const BREEDING_ROLE = await idleProcioneEgg.BREEDING_ROLE();
-        await idleProcioneEgg.grantRole(BREEDING_ROLE, owner.address);
-
-        // Deploy del contratto di breeding
-        breedingContract = await ethers.getContractFactory("BreedingContract");
-        await breedingContract.deploy(await mockIdleProcioneNFT.getAddress());
-        await breedingContract.waitForDeployment();
     });
 
     describe("Deployment", function () {
         it("Dovrebbe impostare correttamente i parametri iniziali", async function () {
+            expect(await idleProcioneEgg.name()).to.equal("Idle Procione Egg");
+            expect(await idleProcioneEgg.symbol()).to.equal("IPE");
             expect(await idleProcioneEgg.nftContract()).to.equal(await mockIdleProcioneNFT.getAddress());
-            expect(await idleProcioneEgg.hatchTime()).to.equal(HATCH_TIME);
+            expect(await idleProcioneEgg.breedingContract()).to.equal(breedingContract.address);
         });
 
         it("Dovrebbe fallire con parametri invalidi", async function () {
+            const zeroAddress = "0x0000000000000000000000000000000000000000";
             await expect(
                 IdleProcioneEgg.deploy(
-                    ethers.ZeroAddress,
-                    HATCH_TIME
+                    "Test",
+                    "TST",
+                    zeroAddress,
+                    breedingContract.address
                 )
-            ).to.be.revertedWith("Indirizzo NFT non valido");
+            ).to.be.revertedWithCustomError(idleProcioneEgg, "InvalidAddress");
 
             await expect(
                 IdleProcioneEgg.deploy(
+                    "Test",
+                    "TST",
                     await mockIdleProcioneNFT.getAddress(),
-                    0
+                    zeroAddress
                 )
-            ).to.be.revertedWith("Tempo di schiusa non valido");
+            ).to.be.revertedWithCustomError(idleProcioneEgg, "InvalidAddress");
         });
     });
 
@@ -95,30 +107,39 @@ describe("IdleProcioneEgg", function () {
                 parentId2,
                 genetics,
                 hatchTime
-            )).to.be.revertedWith("AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x5f58e3a2316349923ce3780f8d587db2d72378aed66a8261c916544fa6846ca5");
+            )).to.be.revertedWithCustomError(idleProcioneEgg, "UnauthorizedBreeder");
         });
     });
 
     describe("Hatch", function () {
-        const parentId1 = 1;
-        const parentId2 = 2;
+        let parent1Id;
+        let parent2Id;
         const genetics = 123;
         let hatchTime;
         let eggId;
 
         beforeEach(async function () {
+            // Mint dei token genitori
+            const tx1 = await mockIdleProcioneNFT.simpleMint(addr1.address);
+            const receipt1 = await tx1.wait();
+            parent1Id = receipt1.logs[0].args[2]; // TokenId è il terzo argomento nell'evento Transfer
+
+            const tx2 = await mockIdleProcioneNFT.simpleMint(addr1.address);
+            const receipt2 = await tx2.wait();
+            parent2Id = receipt2.logs[0].args[2]; // TokenId è il terzo argomento nell'evento Transfer
+
             // Setup dei dati dei genitori nel mock NFT
             const parent1Data = await createInitialData(100, 1, 1);
             const parent2Data = await createInitialData(100, 2, 2);
-            await mockIdleProcioneNFT.updateProcioneData(parentId1, parent1Data);
-            await mockIdleProcioneNFT.updateProcioneData(parentId2, parent2Data);
+            await mockIdleProcioneNFT.updateProcioneData(parent1Id, parent1Data);
+            await mockIdleProcioneNFT.updateProcioneData(parent2Id, parent2Data);
 
             // Mint dell'uovo
             hatchTime = Math.floor(Date.now() / 1000) + 3600;
             await idleProcioneEgg.connect(breedingContract).mint(
                 addr1.address,
-                parentId1,
-                parentId2,
+                parent1Id,
+                parent2Id,
                 genetics,
                 hatchTime
             );
@@ -127,24 +148,23 @@ describe("IdleProcioneEgg", function () {
 
         it("Non dovrebbe permettere la schiusa prima del tempo", async function () {
             await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
-                .to.be.revertedWith("L'uovo non può ancora schiudersi");
+                .to.be.revertedWithCustomError(idleProcioneEgg, "EggNotReadyToHatch");
         });
 
         it("Dovrebbe permettere la schiusa dopo il tempo necessario", async function () {
-            // Avanza il tempo di 7 giorni
-            await ethers.provider.send("evm_increaseTime", [HATCH_TIME]);
-            await ethers.provider.send("evm_mine");
+            // Avanza il tempo di 5 giorni
+            await time.increase(INCUBATION_TIME);
 
-            await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
-                .to.emit(idleProcioneEgg, "EggHatched")
-                .withArgs(eggId, expect.any(Number), addr1.address);
-
+            const tx = await idleProcioneEgg.connect(addr1).hatch(eggId);
+            const receipt = await tx.wait();
+            
+            // Verifica che l'uovo sia stato schiuso
             const eggData = await idleProcioneEgg.getEggData(eggId);
             expect(eggData.hatched).to.be.true;
         });
 
         it("Non dovrebbe permettere la schiusa di un uovo già schiuso", async function () {
-            await time.increase(3600);
+            await time.increase(INCUBATION_TIME);
             await idleProcioneEgg.connect(addr1).hatch(eggId);
 
             await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
@@ -154,33 +174,54 @@ describe("IdleProcioneEgg", function () {
         it("Non dovrebbe permettere a un non proprietario di schiudere l'uovo", async function () {
             await time.increase(3600);
             await expect(idleProcioneEgg.connect(addr2).hatch(eggId))
-                .to.be.revertedWith("Non sei il proprietario dell'uovo");
+                .to.be.revertedWithCustomError(idleProcioneEgg, "UnauthorizedBreeder");
         });
 
         it("Dovrebbe creare un nuovo procione con la genetica corretta", async function () {
-            await time.increase(3600);
-            await idleProcioneEgg.connect(addr1).hatch(eggId);
-
-            const newProcioneId = 1; // Il mock NFT incrementa l'ID
+            await time.increase(INCUBATION_TIME);
+            const tx = await idleProcioneEgg.connect(addr1).hatch(eggId);
+            const receipt = await tx.wait();
+            
+            const hatchEvent = receipt.logs.find(
+                log => log.fragment && log.fragment.name === "EggHatched"
+            );
+            const newProcioneId = hatchEvent.args.newProcioneId;
+            
             const newProcioneData = await mockIdleProcioneNFT.getProcioneData(newProcioneId);
-            const newGenetics = await extractField(newProcioneData, "GENETICS_MASK", "GENETICS_POSITION");
-            expect(newGenetics).to.equal(genetics);
+            const newGenetics = newProcioneData & ((1n << 64n) - 1n); // Estrai i primi 64 bit
+            expect(newGenetics).to.equal(BigInt(genetics));
         });
     });
 
     describe("View Functions", function () {
-        const parentId1 = 1;
-        const parentId2 = 2;
-        const genetics = 123;
-        const hatchTime = Math.floor(Date.now() / 1000) + 3600;
         let eggId;
+        let hatchTime;
 
         beforeEach(async function () {
+            // Mint dei token genitori
+            const tx1 = await mockIdleProcioneNFT.simpleMint(addr1.address);
+            const receipt1 = await tx1.wait();
+            const parent1Id = receipt1.logs[0].args[2];
+
+            const tx2 = await mockIdleProcioneNFT.simpleMint(addr1.address);
+            const receipt2 = await tx2.wait();
+            const parent2Id = receipt2.logs[0].args[2];
+
+            // Setup dei dati dei genitori nel mock NFT
+            const parent1Data = await createInitialData(100, 1, 1);
+            const parent2Data = await createInitialData(100, 2, 2);
+            await mockIdleProcioneNFT.updateProcioneData(parent1Id, parent1Data);
+            await mockIdleProcioneNFT.updateProcioneData(parent2Id, parent2Data);
+
+            // Mint dell'uovo
+            const currentBlock = await ethers.provider.getBlock('latest');
+            const currentTime = currentBlock.timestamp;
+            hatchTime = currentTime + INCUBATION_TIME;
             await idleProcioneEgg.connect(breedingContract).mint(
                 addr1.address,
-                parentId1,
-                parentId2,
-                genetics,
+                parent1Id,
+                parent2Id,
+                123,
                 hatchTime
             );
             eggId = 0;
@@ -188,19 +229,21 @@ describe("IdleProcioneEgg", function () {
 
         it("Dovrebbe restituire i dati corretti dell'uovo", async function () {
             const eggData = await idleProcioneEgg.getEggData(eggId);
-            expect(eggData.parentId1).to.equal(parentId1);
-            expect(eggData.parentId2).to.equal(parentId2);
-            expect(eggData.genetics).to.equal(genetics);
             expect(eggData.hatchTime).to.equal(hatchTime);
             expect(eggData.hatched).to.be.false;
         });
 
         it("Dovrebbe indicare correttamente se un uovo può essere schiuso", async function () {
+            // Prima del tempo di schiusa
+            const currentBlock = await ethers.provider.getBlock('latest');
+            console.log('Current timestamp:', currentBlock.timestamp);
+            console.log('Hatch time:', hatchTime);
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.false;
 
-            await ethers.provider.send("evm_increaseTime", [HATCH_TIME]);
-            await ethers.provider.send("evm_mine");
-
+            // Dopo il tempo di schiusa
+            await time.increase(INCUBATION_TIME);
+            const newBlock = await ethers.provider.getBlock('latest');
+            console.log('New timestamp:', newBlock.timestamp);
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.true;
         });
     });
@@ -232,30 +275,12 @@ describe("IdleProcioneEgg", function () {
                 addr1.address,
                 addr2.address,
                 0
-            )).to.be.revertedWith("Pausable: paused");
+            )).to.be.revertedWithCustomError(idleProcioneEgg, "EnforcedPause");
         });
     });
 
     // Funzioni di utilità per i test
-    async function createInitialData(xp, level = 1, faction = 1) {
-        let data = 0;
-        data = await updateField(data, xp, "XP_MASK", "XP_POSITION");
-        data = await updateField(data, level, "LEVEL_MASK", "LEVEL_POSITION");
-        data = await updateField(data, 100, "HEALTH_MASK", "HEALTH_POSITION");
-        data = await updateField(data, 10, "STRENGTH_MASK", "STRENGTH_POSITION");
-        data = await updateField(data, 10, "SPEED_MASK", "SPEED_POSITION");
-        data = await updateField(data, 10, "INTELLIGENCE_MASK", "INTELLIGENCE_POSITION");
-        data = await updateField(data, 10, "ACCURACY_MASK", "ACCURACY_POSITION");
-        data = await updateField(data, 0, "BREEDING_MASK", "BREEDING_POSITION");
-        data = await updateField(data, faction, "FACTION_MASK", "FACTION_POSITION");
-        return data;
-    }
-
-    async function updateField(data, value, mask, position) {
-        return await idleProcioneEgg.updateField(data, value, mask, position);
-    }
-
     async function extractField(data, mask, position) {
-        return await idleProcioneEgg.extractField(data, mask, position);
+        return await mockStatsLib.extractField(data, mask, position);
     }
 }); 

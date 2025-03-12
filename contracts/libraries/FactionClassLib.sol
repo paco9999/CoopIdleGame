@@ -82,19 +82,37 @@ library FactionClassLib {
             revert("Limite fazioni raggiunto");
         }
         
-        uint256 factionValue = uint256(keccak256(abi.encode(randomValue, attempt, "faction"))) % 4 + 1;
-        Faction faction = Faction(factionValue);
-        
+        bytes32 seed = keccak256(abi.encodePacked(randomValue, attempt, "faction"));
         uint256 maxPerFaction = data.maxFactionGen / 4;
         if (maxPerFaction == 0) maxPerFaction = 1;
-        
-        if (data.factionCount[uint256(faction)] >= maxPerFaction) {
-            revert("Distribuzione fazioni non bilanciata");
+
+        // Trova la fazione con il minor numero di generazioni
+        uint256 minCount = type(uint256).max;
+        uint256 minFaction = 0;
+        for (uint256 i = 1; i <= 4; i++) {
+            if (data.factionCount[i] < minCount) {
+                minCount = data.factionCount[i];
+                minFaction = i;
+            }
         }
-        
-        data.factionCount[uint256(faction)]++;
+
+        // Se la fazione con il minor numero di generazioni ha raggiunto il limite,
+        // usa il valore casuale
+        if (minCount >= maxPerFaction) {
+            uint256 factionValue = (uint256(seed) % 4) + 1;
+            Faction faction = Faction(factionValue);
+            if (data.factionCount[uint256(faction)] >= maxPerFaction) {
+                revert("Distribuzione fazioni non bilanciata");
+            }
+            data.factionCount[uint256(faction)]++;
+            data.facGen++;
+            return faction;
+        }
+
+        // Altrimenti, usa la fazione con il minor numero di generazioni
+        data.factionCount[minFaction]++;
         data.facGen++;
-        return faction;
+        return Faction(minFaction);
     }
 
     /// @notice Genera una classe valida
@@ -111,19 +129,37 @@ library FactionClassLib {
             revert("Limite classi raggiunto");
         }
         
-        uint256 classValue = uint256(keccak256(abi.encode(randomValue, attempt, "class"))) % 5 + 1;
-        Class class_ = Class(classValue);
-        
+        bytes32 seed = keccak256(abi.encodePacked(randomValue, attempt, "class"));
         uint256 maxPerClass = data.maxClassGen / 5;
         if (maxPerClass == 0) maxPerClass = 1;
-        
-        if (data.classCount[uint256(class_)] >= maxPerClass) {
-            revert("Distribuzione classi non bilanciata");
+
+        // Trova la classe con il minor numero di generazioni
+        uint256 minCount = type(uint256).max;
+        uint256 minClass = 0;
+        for (uint256 i = 1; i <= 5; i++) {
+            if (data.classCount[i] < minCount) {
+                minCount = data.classCount[i];
+                minClass = i;
+            }
         }
-        
-        data.classCount[uint256(class_)]++;
+
+        // Se la classe con il minor numero di generazioni ha raggiunto il limite,
+        // usa il valore casuale
+        if (minCount >= maxPerClass) {
+            uint256 classValue = (uint256(seed) % 5) + 1;
+            Class class_ = Class(classValue);
+            if (data.classCount[uint256(class_)] >= maxPerClass) {
+                revert("Distribuzione classi non bilanciata");
+            }
+            data.classCount[uint256(class_)]++;
+            data.classGen++;
+            return class_;
+        }
+
+        // Altrimenti, usa la classe con il minor numero di generazioni
+        data.classCount[minClass]++;
         data.classGen++;
-        return class_;
+        return Class(minClass);
     }
 
     /// @notice Ottiene le fazioni disponibili

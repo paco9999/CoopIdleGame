@@ -6,32 +6,17 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./libraries/StatsLib.sol";
 
 /// @title IdleProcioneLeveling
 /// @notice Sistema di leveling per gli NFT Procione
 /// @dev Gestisce il level up e le statistiche dei procioni
 contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
-    // ========== Constants ==========
-    uint256 private constant XP_MASK = 0xFFFFFFFF;
-    uint256 private constant XP_POSITION = 0;
-    uint256 private constant LEVEL_MASK = 0xFF;
-    uint256 private constant LEVEL_POSITION = 32;
-    uint256 private constant HEALTH_MASK = 0xFF;
-    uint256 private constant HEALTH_POSITION = 40;
-    uint256 private constant STRENGTH_MASK = 0xFF;
-    uint256 private constant STRENGTH_POSITION = 48;
-    uint256 private constant SPEED_MASK = 0xFF;
-    uint256 private constant SPEED_POSITION = 56;
-    uint256 private constant INTELLIGENCE_MASK = 0xFF;
-    uint256 private constant INTELLIGENCE_POSITION = 64;
-    uint256 private constant ACCURACY_MASK = 0xFF;
-    uint256 private constant ACCURACY_POSITION = 72;
-    uint256 private constant BREEDING_MASK = 0xFF;
-    uint256 private constant BREEDING_POSITION = 80;
+    using StatsLib for uint256;
 
     // ========== State Variables ==========
-    IIdleProcioneNFT public nftContract;
-    IERC20 public rToken;
+    IIdleProcioneNFT public immutable nftContract;
+    IERC20 public immutable rToken;
     address public treasuryAddress;
     uint256 public baseFee;
     uint256 public incrementoFee;
@@ -46,12 +31,15 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
     error TransferFailed();
     error InvalidStats();
     error InvalidXPDeduction();
+    error InvalidFeeParameters();
 
     // ========== Events ==========
     event LevelUp(uint256 indexed tokenId, uint256 newLevel, uint256 remainingXP, uint256 fee);
     event TreasuryUpdated(address indexed newTreasury);
     event FeeParametersUpdated(uint256 newBaseFee, uint256 newIncrementoFee);
     event MaxLevelUpdated(uint256 newMaxLevel);
+    event ContractPaused(address indexed operator);
+    event ContractUnpaused(address indexed operator);
 
     // ========== Constructor ==========
     constructor(
@@ -66,6 +54,7 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
             revert InvalidAddress();
         }
         if (_maxLevel == 0 || _maxLevel > 50) revert InvalidLevel();
+        if (_baseFee == 0 || _incrementoFee == 0) revert InvalidFeeParameters();
 
         nftContract = IIdleProcioneNFT(_nftContract);
         rToken = IERC20(_rToken);
@@ -77,78 +66,43 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
 
     // ========== Public Functions ==========
     function levelUp(uint256 tokenId) external whenNotPaused nonReentrant {
-        // Verifica proprietà del token
         if (nftContract.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
 
-        // Ottieni i dati del procione
         uint256 data = nftContract.getProcioneData(tokenId);
-        uint256 currentLevel = extractField(data, LEVEL_MASK, LEVEL_POSITION);
-        uint256 currentXP = extractField(data, XP_MASK, XP_POSITION);
-
-        // Verifica condizioni per il level up
+        uint256 currentLevel = data.extractField(StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
+        
         if (currentLevel >= maxLevel) revert MaxLevelReached();
+        
+        uint256 currentXP = data.extractField(StatsLib.XP_MASK, StatsLib.XP_POSITION);
         uint256 requiredXP = xpForLevel(currentLevel);
         if (currentXP < requiredXP) revert InsufficientXP();
 
-        // Calcola e addebita la fee
         uint256 fee = calculateFee(currentLevel);
-        bool success = rToken.transferFrom(msg.sender, treasuryAddress, fee);
-        if (!success) revert TransferFailed();
+        if (!rToken.transferFrom(msg.sender, treasuryAddress, fee)) revert TransferFailed();
 
-        // Aggiorna le statistiche
-        uint256 newLevel = currentLevel + 1;
         uint256 newXP = currentXP - requiredXP;
-        if (newXP > currentXP) revert InvalidXPDeduction(); // Check per overflow
+        if (newXP > currentXP) revert InvalidXPDeduction();
+        
+        data = _updateLevelAndXP(data, currentLevel + 1, newXP);
+        data = _updateStats(data);
+        data = _updateBreedingSlots(data, currentLevel + 1);
 
-        data = updateField(data, newXP, XP_MASK, XP_POSITION);
-        data = updateField(data, newLevel, LEVEL_MASK, LEVEL_POSITION);
-
-        // Incrementa le statistiche base con controlli
-        uint256 newStrength = extractField(data, STRENGTH_MASK, STRENGTH_POSITION) + 2;
-        uint256 newSpeed = extractField(data, SPEED_MASK, SPEED_POSITION) + 2;
-        uint256 newIntelligence = extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION) + 2;
-        uint256 newAccuracy = extractField(data, ACCURACY_MASK, ACCURACY_POSITION) + 2;
-
-        // Verifica che i nuovi valori non superino il massimo consentito (255)
-        if (newStrength > STRENGTH_MASK || newSpeed > SPEED_MASK || 
-            newIntelligence > INTELLIGENCE_MASK || newAccuracy > ACCURACY_MASK) {
-            revert InvalidStats();
-        }
-
-        data = updateField(data, newStrength, STRENGTH_MASK, STRENGTH_POSITION);
-        data = updateField(data, newSpeed, SPEED_MASK, SPEED_POSITION);
-        data = updateField(data, newIntelligence, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-        data = updateField(data, newAccuracy, ACCURACY_MASK, ACCURACY_POSITION);
-
-        // Sblocca slot breeding ai livelli specifici
-        if (newLevel == 3 || newLevel == 10 || newLevel == 20 || newLevel == 35 || newLevel == 50) {
-            uint256 currentBreeding = extractField(data, BREEDING_MASK, BREEDING_POSITION);
-            uint256 newBreeding = currentBreeding + 1;
-            if (newBreeding > BREEDING_MASK) revert InvalidStats();
-            data = updateField(data, newBreeding, BREEDING_MASK, BREEDING_POSITION);
-        }
-
-        // Aggiorna i dati del procione
         nftContract.updateProcioneData(tokenId, data);
 
-        emit LevelUp(tokenId, newLevel, newXP, fee);
+        emit LevelUp(tokenId, currentLevel + 1, newXP, fee);
     }
 
     // ========== View Functions ==========
     function xpForLevel(uint256 level) public pure returns (uint256) {
-        return 30 * level * level;
+        unchecked {
+            return 30 * level * level;
+        }
     }
 
     function calculateFee(uint256 currentLevel) public view returns (uint256) {
-        return baseFee + (incrementoFee * (currentLevel + 1));
-    }
-
-    function extractField(uint256 data, uint256 mask, uint256 position) public pure returns (uint256) {
-        return (data >> position) & mask;
-    }
-
-    function updateField(uint256 data, uint256 value, uint256 mask, uint256 position) public pure returns (uint256) {
-        return (data & ~(mask << position)) | ((value & mask) << position);
+        unchecked {
+            return baseFee + (incrementoFee * (currentLevel + 1));
+        }
     }
 
     // ========== Admin Functions ==========
@@ -159,6 +113,7 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
     }
 
     function setFeeParameters(uint256 _baseFee, uint256 _incrementoFee) external onlyOwner {
+        if (_baseFee == 0 || _incrementoFee == 0) revert InvalidFeeParameters();
         baseFee = _baseFee;
         incrementoFee = _incrementoFee;
         emit FeeParametersUpdated(_baseFee, _incrementoFee);
@@ -172,9 +127,46 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
 
     function pause() external onlyOwner {
         _pause();
+        emit ContractPaused(msg.sender);
     }
 
     function unpause() external onlyOwner {
         _unpause();
+        emit ContractUnpaused(msg.sender);
+    }
+
+    // ========== Internal Functions ==========
+    function _updateLevelAndXP(uint256 data, uint256 newLevel, uint256 newXP) private pure returns (uint256) {
+        data = data.updateField(newXP, StatsLib.XP_MASK, StatsLib.XP_POSITION);
+        return data.updateField(newLevel, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
+    }
+
+    function _updateStats(uint256 data) private pure returns (uint256) {
+        unchecked {
+            uint256[4] memory stats;
+            stats[0] = data.extractField(StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION) + 2;
+            stats[1] = data.extractField(StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION) + 2;
+            stats[2] = data.extractField(StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION) + 2;
+            stats[3] = data.extractField(StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION) + 2;
+
+            for(uint256 i = 0; i < 4; i++) {
+                if (stats[i] > 255) revert InvalidStats();
+            }
+
+            data = data.updateField(stats[0], StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION);
+            data = data.updateField(stats[1], StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION);
+            data = data.updateField(stats[2], StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION);
+            return data.updateField(stats[3], StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION);
+        }
+    }
+
+    function _updateBreedingSlots(uint256 data, uint256 newLevel) private pure returns (uint256) {
+        if (newLevel == 3 || newLevel == 10 || newLevel == 20 || newLevel == 35 || newLevel == 50) {
+            uint256 currentBreeding = data.extractField(StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+            uint256 newBreeding = currentBreeding + 1;
+            if (newBreeding > StatsLib.BREEDING_MASK) revert InvalidStats();
+            return data.updateField(newBreeding, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+        }
+        return data;
     }
 } 

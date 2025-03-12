@@ -2,65 +2,74 @@
 pragma solidity ^0.8.19;
 
 import "../libraries/WhitelistLib.sol";
-import "./WhitelistLibTestLib.sol";
 
 /// @title WhitelistLibTest
 /// @notice Contratto di test per WhitelistLib
 /// @dev Espone tutte le funzionalità della libreria per i test
 contract WhitelistLibTest {
-    using WhitelistLibTestLib for WhitelistLibTestLib.WhitelistData;
+    using WhitelistLib for WhitelistLib.WhitelistData;
 
-    WhitelistLibTestLib.WhitelistData private data;
+    WhitelistLib.WhitelistData private data;
+    uint256 constant MINT_PER_WALLET = 2;
 
-    function addToWhitelist(address account, uint8 phase) public {
-        WhitelistLibTestLib.addToWhitelist(data, account, phase);
+    function setWhitelistPhase1(address[] calldata addresses, bool status) public {
+        data.setWhitelistPhase1(addresses, status);
     }
 
-    function removeFromWhitelist(address account, uint8 phase) public {
-        WhitelistLibTestLib.removeFromWhitelist(data, account, phase);
+    function setWhitelistPhase2(address[] calldata addresses, bool status) public {
+        data.setWhitelistPhase2(addresses, status);
     }
 
-    function setPhaseStatus(uint8 phase, bool status) public {
-        WhitelistLibTestLib.setPhaseStatus(data, phase, status);
+    function setPhaseStatus(uint256 phase, bool status) public {
+        data.setPhaseStatus(phase, status);
     }
 
-    function setPrice(uint8 phase, uint256 price) public {
-        WhitelistLibTestLib.setPrice(data, phase, price);
+    function setPrice(uint256 _price) public {
+        data.setPrice(_price);
     }
 
-    function setMaxMint(uint8 phase, uint256 maxMint) public {
-        WhitelistLibTestLib.setMaxMint(data, phase, maxMint);
+    function setWhitelistBatch(
+        address[] calldata addresses,
+        bool[] calldata phase1Status,
+        bool[] calldata phase2Status
+    ) public {
+        data.setWhitelistBatch(addresses, phase1Status, phase2Status);
     }
 
-    function isWhitelisted(address account, uint8 phase) public view returns (bool) {
-        return WhitelistLibTestLib.isWhitelisted(data, account, phase);
+    function checkMintConditions(
+        address sender,
+        uint256 value
+    ) public view returns (bool) {
+        return data.checkMintConditions(sender, value, MINT_PER_WALLET);
     }
 
-    function isPhaseActive(uint8 phase) public view returns (bool) {
-        return WhitelistLibTestLib.isPhaseActive(data, phase);
+    function getMintInfo(address wallet) public view returns (
+        bool isWhitelistedPhase1,
+        bool isWhitelistedPhase2,
+        uint256 mintedAmount,
+        uint256 remainingMints
+    ) {
+        return data.getMintInfo(wallet, MINT_PER_WALLET);
     }
 
-    function getPrice(uint8 phase) public view returns (uint256) {
-        return WhitelistLibTestLib.getPrice(data, phase);
+    // Funzioni di visualizzazione aggiuntive per i test
+    function isPhase1Active() public view returns (bool) {
+        return data.isPhase1Active;
     }
 
-    function getMaxMint(uint8 phase) public view returns (uint256) {
-        return WhitelistLibTestLib.getMaxMint(data, phase);
+    function isPhase2Active() public view returns (bool) {
+        return data.isPhase2Active;
     }
 
-    function getMintCount(address account) public view returns (uint256) {
-        return WhitelistLibTestLib.getMintCount(data, account);
+    function getPrice() public view returns (uint256) {
+        return data.price;
     }
 
-    function incrementMintCount(address account) public {
-        WhitelistLibTestLib.incrementMintCount(data, account);
+    function isWhitelistedInPhase1(address account) public view returns (bool) {
+        return data.whitelistPhase1[account];
     }
 
-    function checkMintConditions(address account) public view returns (uint256) {
-        return WhitelistLibTestLib.checkMintConditions(data, account);
-    }
-
-    function getMintInfo(address account) public view returns (bool, uint256, uint256) {
-        return WhitelistLibTestLib.getMintInfo(data, account);
+    function isWhitelistedInPhase2(address account) public view returns (bool) {
+        return data.whitelistPhase2[account];
     }
 } 

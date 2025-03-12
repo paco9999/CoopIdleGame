@@ -5,14 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/StatsLib.sol";
-
-// ========== Interfaces ==========
-/// @notice Interfaccia per il contratto NFT dei Procioni
-interface IIdleProcioneNFT {
-    function mint(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
-    function mintFromEgg(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
-    function getProcioneData(uint256 procioneId) external view returns (uint256);
-}
+import "./interfaces/IIdleProcioneNFT.sol";
 
 /// @title IdleProcioneEgg
 /// @notice Contratto per la gestione delle uova dei Procioni
@@ -182,6 +175,16 @@ contract IdleProcioneEgg is ERC721Pausable, Ownable, ReentrancyGuard {
     }
 
     // ========== Admin Functions ==========
+    /// @notice Mette in pausa il contratto
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Riprende il contratto dalla pausa
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /// @notice Verifica se un token esiste
     /// @param tokenId ID del token da verificare
     /// @return bool True se il token esiste

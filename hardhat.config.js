@@ -56,8 +56,14 @@ module.exports = {
     timeout: 40000
   },
   libraries: {
+    "contracts/test/StatsLibTestLib.sol": {
+      "StatsLibTestLib": "contracts/libraries/StatsLib.sol"
+    },
     "contracts/test/FactionClassLibTest.sol": {
       "FactionClassLib": "contracts/libraries/FactionClassLib.sol"
+    },
+    "contracts/test/WhitelistLibTest.sol": {
+      "WhitelistLibTestLib": "contracts/test/WhitelistLib.sol"
     }
   }
 }

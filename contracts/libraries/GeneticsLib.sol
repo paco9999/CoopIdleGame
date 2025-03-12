@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
 library GeneticsLib {
     // ========== Constants ==========
     // Maschere per i campi
-    uint256 constant ALLELE_MASK = (1 << 6) - 1;      // 6 bit per allele
+    uint256 public constant ALLELE_MASK = 0x3F; // 6 bit per allele
     uint256 constant TRAIT_ID_MASK = (1 << 4) - 1;    // 4 bit per ID tratto
     uint256 constant TRAIT_TYPE_MASK = (1 << 2) - 1;  // 2 bit per tipo carattere
 
@@ -89,6 +89,17 @@ library GeneticsLib {
         uint256 position
     ) internal pure returns (uint256) {
         return (data >> position) & mask;
+    }
+
+    /// @notice Aggiorna un campo nei dati usando una maschera e una posizione
+    /// @param data I dati da aggiornare
+    /// @param value Il nuovo valore del campo
+    /// @param mask La maschera da applicare
+    /// @param position La posizione del campo
+    /// @return I dati aggiornati
+    function updateField(uint256 data, uint256 value, uint256 mask, uint256 position) internal pure returns (uint256) {
+        uint256 clearedData = data & ~(mask << position);
+        return clearedData | ((value & mask) << position);
     }
 
     /// @notice Genera un tipo di carattere valido

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "../libraries/StatsLib.sol";
-import "./StatsLibTestLib.sol";
 
 /// @title StatsLibTest
 /// @notice Contratto di test per esporre le funzioni della libreria StatsLib
 contract StatsLibTest {
-    using StatsLibTestLib for uint256;
+    using StatsLib for uint256;
 
     uint256 private stats;
 
@@ -49,74 +48,172 @@ contract StatsLibTest {
     uint256 public constant MAX_RARITY = 4;
     uint256 public constant MAX_GENERATION = 100;
 
+    function extractField(uint256 data, uint256 mask, uint256 position) public pure returns (uint256) {
+        return StatsLib.extractField(data, mask, position);
+    }
+
+    function updateField(uint256 data, uint256 value, uint256 mask, uint256 position) public pure returns (uint256) {
+        return StatsLib.updateField(data, value, mask, position);
+    }
+
     function setLevel(uint256 level) public {
-        stats = StatsLibTestLib.setLevel(stats, level);
+        stats = StatsLib.setLevel(stats, level);
     }
 
     function setXP(uint256 xp) public {
-        stats = StatsLibTestLib.setXP(stats, xp);
+        stats = StatsLib.setXP(stats, xp);
     }
 
     function setBreedingSlots(uint256 slots) public {
-        stats = StatsLibTestLib.setBreedingSlots(stats, slots);
+        stats = StatsLib.setBreedingSlots(stats, slots);
     }
 
     function setBreedingCount(uint256 count) public {
-        stats = StatsLibTestLib.setBreedingCount(stats, count);
+        stats = StatsLib.setBreedingCount(stats, count);
     }
 
     function setRarity(uint256 rarity) public {
-        stats = StatsLibTestLib.setRarity(stats, rarity);
+        stats = StatsLib.setRarity(stats, rarity);
     }
 
     function getLevel() public view returns (uint256) {
-        return StatsLibTestLib.getLevel(stats);
+        return StatsLib.getLevel(stats);
     }
 
     function getXP() public view returns (uint256) {
-        return StatsLibTestLib.getXP(stats);
+        return StatsLib.getXP(stats);
     }
 
     function getBreedingSlots() public view returns (uint256) {
-        return StatsLibTestLib.getBreedingSlots(stats);
+        return StatsLib.getBreedingSlots(stats);
     }
 
     function getBreedingCount() public view returns (uint256) {
-        return StatsLibTestLib.getBreedingCount(stats);
+        return StatsLib.getBreedingCount(stats);
     }
 
     function getRarity() public view returns (uint256) {
-        return StatsLibTestLib.getRarity(stats);
+        return StatsLib.getRarity(stats);
     }
 
     function getAllStats() public view returns (
-        uint256 level,
         uint256 xp,
+        uint256 level,
         uint256 breedingSlots,
         uint256 breedingCount,
         uint256 rarity
     ) {
-        return StatsLibTestLib.getAllStats(stats);
+        return StatsLib.getAllStats(stats);
+    }
+
+    // Costanti
+    function getXPMask() public pure returns (uint256) {
+        return StatsLib.XP_MASK;
+    }
+
+    function getLevelMask() public pure returns (uint256) {
+        return StatsLib.LEVEL_MASK;
+    }
+
+    function getHealthMask() public pure returns (uint256) {
+        return StatsLib.HEALTH_MASK;
+    }
+
+    function getStrengthMask() public pure returns (uint256) {
+        return StatsLib.STRENGTH_MASK;
+    }
+
+    function getSpeedMask() public pure returns (uint256) {
+        return StatsLib.SPEED_MASK;
+    }
+
+    function getIntelligenceMask() public pure returns (uint256) {
+        return StatsLib.INTELLIGENCE_MASK;
+    }
+
+    function getAccuracyMask() public pure returns (uint256) {
+        return StatsLib.ACCURACY_MASK;
+    }
+
+    function getBreedingMask() public pure returns (uint256) {
+        return StatsLib.BREEDING_MASK;
+    }
+
+    function getGeneticsMask() public pure returns (uint256) {
+        return StatsLib.GENETICS_MASK;
+    }
+
+    function getClassMask() public pure returns (uint256) {
+        return StatsLib.CLASS_MASK;
+    }
+
+    function getFactionMask() public pure returns (uint256) {
+        return StatsLib.FACTION_MASK;
+    }
+
+    // Posizioni
+    function getXPPosition() public pure returns (uint256) {
+        return StatsLib.XP_POSITION;
+    }
+
+    function getLevelPosition() public pure returns (uint256) {
+        return StatsLib.LEVEL_POSITION;
+    }
+
+    function getHealthPosition() public pure returns (uint256) {
+        return StatsLib.HEALTH_POSITION;
+    }
+
+    function getStrengthPosition() public pure returns (uint256) {
+        return StatsLib.STRENGTH_POSITION;
+    }
+
+    function getSpeedPosition() public pure returns (uint256) {
+        return StatsLib.SPEED_POSITION;
+    }
+
+    function getIntelligencePosition() public pure returns (uint256) {
+        return StatsLib.INTELLIGENCE_POSITION;
+    }
+
+    function getAccuracyPosition() public pure returns (uint256) {
+        return StatsLib.ACCURACY_POSITION;
+    }
+
+    function getBreedingPosition() public pure returns (uint256) {
+        return StatsLib.BREEDING_POSITION;
+    }
+
+    function getGeneticsPosition() public pure returns (uint256) {
+        return StatsLib.GENETICS_POSITION;
+    }
+
+    function getClassPosition() public pure returns (uint256) {
+        return StatsLib.CLASS_POSITION;
+    }
+
+    function getFactionPosition() public pure returns (uint256) {
+        return StatsLib.FACTION_POSITION;
     }
 
     function getMaxLevel() public pure returns (uint256) {
-        return StatsLibTestLib.MAX_LEVEL;
+        return StatsLib.MAX_LEVEL;
     }
 
     function getMaxXP() public pure returns (uint256) {
-        return StatsLibTestLib.MAX_XP;
+        return StatsLib.MAX_XP;
     }
 
     function getMaxBreedingSlots() public pure returns (uint256) {
-        return StatsLibTestLib.MAX_BREEDING_SLOTS;
+        return StatsLib.MAX_BREEDING_SLOTS;
     }
 
     function getMaxBreedingCount() public pure returns (uint256) {
-        return StatsLibTestLib.MAX_BREEDING_COUNT;
+        return StatsLib.MAX_BREEDING_COUNT;
     }
 
     function getMaxRarity() public pure returns (uint256) {
-        return StatsLibTestLib.MAX_RARITY;
+        return StatsLib.MAX_RARITY;
     }
 
     // Funzioni di manipolazione dei campi

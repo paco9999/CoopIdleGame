@@ -14,8 +14,8 @@ library StatsLib {
     uint256 constant SPEED_MASK = 0xFF;        // 32-39
     uint256 constant INTELLIGENCE_MASK = 0xFF; // 40-47
     uint256 constant ACCURACY_MASK = 0xFF;     // 48-55
-    uint256 constant BREEDING_MASK = 0xFF;     // 56-63
-    uint256 constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFF; // 64-127
+    uint256 constant BREEDING_MASK = 0xFF;     // 80-87
+    uint256 public constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
     uint256 constant CLASS_MASK = 0xFF;        // 128-135
     uint256 constant FACTION_MASK = 0xFF;      // 136-143
 
@@ -27,8 +27,8 @@ library StatsLib {
     uint256 constant SPEED_POSITION = 32;
     uint256 constant INTELLIGENCE_POSITION = 40;
     uint256 constant ACCURACY_POSITION = 48;
-    uint256 constant BREEDING_POSITION = 56;
-    uint256 constant GENETICS_POSITION = 64;
+    uint256 constant BREEDING_POSITION = 80;
+    uint256 public constant GENETICS_POSITION = 64;
     uint256 constant CLASS_POSITION = 128;
     uint256 constant FACTION_POSITION = 136;
 
@@ -38,6 +38,13 @@ library StatsLib {
     uint256 constant INITIAL_HEALTH = 100;
     uint256 constant INITIAL_STATS = 10;
     uint256 constant INITIAL_BREEDING = 0;
+
+    // Costanti per i limiti
+    uint256 public constant MAX_LEVEL = 100;
+    uint256 public constant MAX_XP = 1000000;
+    uint256 public constant MAX_BREEDING_SLOTS = 5;
+    uint256 public constant MAX_BREEDING_COUNT = 10;
+    uint256 public constant MAX_RARITY = 5;
 
     // ========== Public Functions ==========
     /// @notice Crea i dati iniziali per un nuovo procione
@@ -88,31 +95,82 @@ library StatsLib {
         breeding = extractField(data, BREEDING_MASK, BREEDING_POSITION);
     }
 
-    /// @notice Estrae un campo specifico da un valore impacchettato
-    /// @param data Dati impacchettati
-    /// @param mask Maschera per il campo
-    /// @param position Posizione del campo
-    /// @return uint256 Valore estratto
-    function extractField(
-        uint256 data,
-        uint256 mask,
-        uint256 position
-    ) internal pure returns (uint256) {
+    /// @notice Estrae un campo dai dati usando una maschera e una posizione
+    /// @param data I dati da cui estrarre il campo
+    /// @param mask La maschera da applicare
+    /// @param position La posizione del campo
+    /// @return Il valore del campo estratto
+    function extractField(uint256 data, uint256 mask, uint256 position) internal pure returns (uint256) {
         return (data >> position) & mask;
     }
 
-    /// @notice Aggiorna un campo specifico in un valore impacchettato
-    /// @param data Dati originali
-    /// @param value Nuovo valore
-    /// @param mask Maschera per il campo
-    /// @param position Posizione del campo
-    /// @return uint256 Dati aggiornati
-    function updateField(
-        uint256 data,
-        uint256 value,
-        uint256 mask,
-        uint256 position
-    ) internal pure returns (uint256) {
-        return (data & ~(mask << position)) | ((value & mask) << position);
+    /// @notice Aggiorna un campo nei dati usando una maschera e una posizione
+    /// @param data I dati da aggiornare
+    /// @param value Il nuovo valore del campo
+    /// @param mask La maschera da applicare
+    /// @param position La posizione del campo
+    /// @return I dati aggiornati
+    function updateField(uint256 data, uint256 value, uint256 mask, uint256 position) internal pure returns (uint256) {
+        uint256 clearedData = data & ~(mask << position);
+        return clearedData | ((value & mask) << position);
+    }
+
+    function setLevel(uint256 stats, uint256 level) internal pure returns (uint256) {
+        require(level <= MAX_LEVEL, "Level too high");
+        return updateField(stats, level, LEVEL_MASK, LEVEL_POSITION);
+    }
+
+    function setXP(uint256 stats, uint256 xp) internal pure returns (uint256) {
+        require(xp <= MAX_XP, "XP too high");
+        return updateField(stats, xp, XP_MASK, XP_POSITION);
+    }
+
+    function setBreedingSlots(uint256 stats, uint256 slots) internal pure returns (uint256) {
+        require(slots <= MAX_BREEDING_SLOTS, "Too many breeding slots");
+        return updateField(stats, slots, BREEDING_MASK, BREEDING_POSITION);
+    }
+
+    function setBreedingCount(uint256 stats, uint256 count) internal pure returns (uint256) {
+        require(count <= MAX_BREEDING_COUNT, "Breeding count too high");
+        return updateField(stats, count, BREEDING_MASK, BREEDING_POSITION);
+    }
+
+    function setRarity(uint256 stats, uint256 rarity) internal pure returns (uint256) {
+        require(rarity <= MAX_RARITY, "Rarity too high");
+        return updateField(stats, rarity, GENETICS_MASK, GENETICS_POSITION);
+    }
+
+    function getLevel(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, LEVEL_MASK, LEVEL_POSITION);
+    }
+
+    function getXP(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, XP_MASK, XP_POSITION);
+    }
+
+    function getBreedingSlots(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, BREEDING_MASK, BREEDING_POSITION);
+    }
+
+    function getBreedingCount(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, BREEDING_MASK, BREEDING_POSITION);
+    }
+
+    function getRarity(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, GENETICS_MASK, GENETICS_POSITION);
+    }
+
+    function getAllStats(uint256 stats) internal pure returns (
+        uint256 xp,
+        uint256 level,
+        uint256 breedingSlots,
+        uint256 breedingCount,
+        uint256 rarity
+    ) {
+        xp = getXP(stats);
+        level = getLevel(stats);
+        breedingSlots = getBreedingSlots(stats);
+        breedingCount = getBreedingCount(stats);
+        rarity = getRarity(stats);
     }
 } 

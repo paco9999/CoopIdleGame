@@ -7,16 +7,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./libraries/StatsLib.sol";
 import "./libraries/GeneticsLib.sol";
+import "./interfaces/IIdleProcioneNFT.sol";
 
 // ========== Interfaces ==========
 /// @notice Interfaccia per il contratto NFT dei Procioni
-interface IIdleProcioneNFT {
-    function ownerOf(uint256 tokenId) external view returns (address);
-    function getProcioneData(uint256 tokenId) external view returns (uint256);
-    function updateProcioneData(uint256 tokenId, uint256 newData) external;
-    function breed(uint256 parent1Id, uint256 parent2Id) external returns (uint256);
-}
-
 interface IIdleProcioneEgg is IERC20 {
     function mint(
         address to,

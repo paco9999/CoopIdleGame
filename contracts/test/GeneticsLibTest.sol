@@ -51,9 +51,6 @@ contract GeneticsLibTest {
     // Espone le funzioni della libreria
     function generateValidTraitType(uint256 randomValue, uint256 attempt) public returns (uint256) {
         GeneticsLib.TraitType traitType = GeneticsLib.generateValidTraitType(randomValue, attempt, counts);
-        if (traitType == GeneticsLib.TraitType.DOMINANT) counts.dominantCount++;
-        if (traitType == GeneticsLib.TraitType.RECESSIVE) counts.recessiveCount++;
-        if (traitType == GeneticsLib.TraitType.MINOR_RECESSIVE) counts.minorRecessiveCount++;
         uint256 result = uint256(traitType);
         emit TraitTypeGenerated(result);
         return result;
@@ -75,10 +72,6 @@ contract GeneticsLibTest {
         uint256 partType
     ) public returns (uint256) {
         uint256 allele = GeneticsLib.generateAllele(randomValue, attempt, partType, counts, limits);
-        uint256 traitType = (allele >> 4) & GeneticsLib.TRAIT_TYPE_MASK;
-        if (traitType == uint256(GeneticsLib.TraitType.DOMINANT)) counts.dominantCount++;
-        if (traitType == uint256(GeneticsLib.TraitType.RECESSIVE)) counts.recessiveCount++;
-        if (traitType == uint256(GeneticsLib.TraitType.MINOR_RECESSIVE)) counts.minorRecessiveCount++;
         emit AlleleGenerated(allele);
         return allele;
     }
@@ -89,14 +82,7 @@ contract GeneticsLibTest {
         uint256 mask,
         uint256 position
     ) public pure returns (uint256) {
-        // Verifica che il valore sia valido per la maschera
-        require(value <= mask, "Valore troppo grande per la maschera");
-        
-        // Pulisci il campo esistente
-        uint256 clearedData = data & ~(mask << position);
-        
-        // Inserisci il nuovo valore nella posizione corretta
-        return clearedData | (value << position);
+        return GeneticsLib.setField(data, value, mask, position);
     }
 
     function extractField(
@@ -138,5 +124,14 @@ contract GeneticsLibTest {
         if (partType == 2) return limits.maxStarRep[traitId];
         if (partType == 3) return limits.maxWeapRep[traitId];
         return limits.maxAccRep[traitId];
+    }
+
+    // Funzioni di test per la manipolazione dei tratti
+    function extractTraitType(uint256 allele) public pure returns (uint256) {
+        return (allele >> 4) & GeneticsLib.TRAIT_TYPE_MASK;
+    }
+
+    function extractTraitId(uint256 allele) public pure returns (uint256) {
+        return allele & GeneticsLib.TRAIT_ID_MASK;
     }
 } 

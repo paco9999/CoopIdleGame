@@ -33,31 +33,18 @@ contract FactionClassLibTest {
         data.setMaxGenLimits(maxFactions, maxClasses);
     }
 
-    function generateValidFaction() public returns (FactionClassLib.Faction) {
-        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
-        FactionClassLib.Faction faction = FactionClassLib.generateValidFaction(seed, 0, data);
-        emit FactionGenerated(uint8(uint256(faction)));
-        return faction;
-    }
-
-    function generateValidClass() public returns (FactionClassLib.Class) {
-        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
-        FactionClassLib.Class class_ = FactionClassLib.generateValidClass(seed, 0, data);
-        emit ClassGenerated(uint8(uint256(class_)));
-        return class_;
-    }
-
-    function generateValidFactionAndClass() public returns (uint8, uint8) {
-        uint256 seed = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
-        FactionClassLib.Faction faction = FactionClassLib.generateValidFaction(seed, 0, data);
+    function generateValidFaction(bytes32 randomValue, uint256 attempt) public returns (uint256) {
+        FactionClassLib.Faction faction = FactionClassLib.generateValidFaction(uint256(randomValue), attempt, data);
         uint8 factionId = uint8(uint256(faction));
         emit FactionGenerated(factionId);
-        
-        FactionClassLib.Class class_ = FactionClassLib.generateValidClass(seed, 1, data);
+        return uint256(faction);
+    }
+
+    function generateValidClass(bytes32 randomValue, uint256 attempt) public returns (uint256) {
+        FactionClassLib.Class class_ = FactionClassLib.generateValidClass(uint256(randomValue), attempt, data);
         uint8 classId = uint8(uint256(class_));
         emit ClassGenerated(classId);
-        
-        return (factionId, classId);
+        return uint256(class_);
     }
 
     // Funzioni di utilità per i test
@@ -65,11 +52,11 @@ contract FactionClassLibTest {
         return data.getMaxGenLimits();
     }
 
-    function getFacGen() public view returns (uint256) {
+    function getFactionGenCount() public view returns (uint256) {
         return data.facGen;
     }
 
-    function getClassGen() public view returns (uint256) {
+    function getClassGenCount() public view returns (uint256) {
         return data.classGen;
     }
 
@@ -92,4 +79,4 @@ contract FactionClassLibTest {
     function getAvailableClasses() public view returns (uint256[6] memory) {
         return data.getAvailableClasses();
     }
-} 
+}
