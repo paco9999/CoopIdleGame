@@ -4,69 +4,50 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "../../libraries/StatsLib.sol";
 
-interface IIdleProcioneNFT {
-    function mint(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
-    function mintFromEgg(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256);
-    function getProcioneData(uint256 procioneId) external view returns (uint256);
-}
+/// @title MockIdleProcioneNFT
+/// @notice Contratto mock per i test dell'NFT
+contract MockIdleProcioneNFT is ERC721 {
+    using StatsLib for uint256;
 
-contract MockIdleProcioneNFT is ERC721, IIdleProcioneNFT {
     mapping(uint256 => uint256) private _procioneData;
     uint256 private _tokenIdCounter;
-    
-    error TokenNotExists();
-    
-    constructor() ERC721("Mock Idle Procione", "MIP") {}
-    
-    function _checkTokenExists(uint256 tokenId) internal view {
-        try this.ownerOf(tokenId) returns (address) {
-            // Il token esiste
-        } catch {
-            revert TokenNotExists();
-        }
-    }
-    
-    // Funzione mint semplice per i test
+
+    constructor() ERC721("MockIdleProcioneNFT", "MNFT") {}
+
     function simpleMint(address to) external returns (uint256) {
-        uint256 tokenId = _tokenIdCounter++;
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
         _safeMint(to, tokenId);
-        _procioneData[tokenId] = 1;  // Dati di default
+        _procioneData[tokenId] = StatsLib.createInitialData();
         return tokenId;
     }
 
-    // Funzione mint per l'interfaccia
-    function mint(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256) {
-        uint256 tokenId = _tokenIdCounter++;
-        _safeMint(to, tokenId);
-        _procioneData[tokenId] = genetics | (class << 128) | (faction << 192);
-        return tokenId;
+    function updateProcioneData(uint256 tokenId, uint256 newData) external {
+        require(_exists(tokenId), "Token does not exist");
+        _procioneData[tokenId] = newData;
     }
 
-    function mintFromEgg(address to, uint256 genetics, uint256 class, uint256 faction) external returns (uint256) {
-        uint256 tokenId = _tokenIdCounter++;
-        _safeMint(to, tokenId);
-        _procioneData[tokenId] = genetics | (class << 128) | (faction << 192);
-        return tokenId;
+    function getProcioneData(uint256 tokenId) external view returns (uint256) {
+        require(_exists(tokenId), "Token does not exist");
+        return _procioneData[tokenId];
     }
-    
+
+    function setLevel(uint256 data, uint256 level) external pure returns (uint256) {
+        return StatsLib.setLevel(data, level);
+    }
+
     function ownerOf(uint256 tokenId) public view override returns (address) {
         return super.ownerOf(tokenId);
     }
-    
-    function getProcioneData(uint256 tokenId) external view returns (uint256) {
-        _checkTokenExists(tokenId);
-        return _procioneData[tokenId];
-    }
-    
-    function updateProcioneData(uint256 tokenId, uint256 data) external {
-        _checkTokenExists(tokenId);
-        _procioneData[tokenId] = data;
-    }
-    
-    function breed(uint256 parent1Id, uint256 parent2Id) external returns (uint256) {
-        // Questo è solo un mock, quindi ritorniamo un nuovo tokenId incrementale
-        uint256 newTokenId = parent1Id + parent2Id;
-        _safeMint(msg.sender, newTokenId);
-        return newTokenId;
+
+    /// @notice Verifica se un token esiste
+    /// @param tokenId ID del token da verificare
+    /// @return bool True se il token esiste
+    function _exists(uint256 tokenId) internal view returns (bool) {
+        try this.ownerOf(tokenId) returns (address) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 } 

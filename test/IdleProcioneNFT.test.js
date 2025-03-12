@@ -16,6 +16,7 @@ describe("IdleProcioneNFT", function () {
     let mockLinkToken;
     let mockOracle;
     let ReentrancyAttacker;
+    let mockBreedingContract;
 
     // Parametri per il deploy
     const NAME = "IdleProcioneNFT";
@@ -68,6 +69,10 @@ describe("IdleProcioneNFT", function () {
         const MockOracle = await ethers.getContractFactory("MockOracle");
         mockOracle = await MockOracle.deploy();
 
+        // Deploy mock breeding contract
+        const MockBreedingContract = await ethers.getContractFactory("MockBreedingContract");
+        mockBreedingContract = await MockBreedingContract.deploy();
+
         // Assegna i valori alle variabili globali
         IdleProcioneNFT = fixture.idleProcioneNFT;
         idleProcioneNFT = fixture.idleProcioneNFT;
@@ -79,6 +84,7 @@ describe("IdleProcioneNFT", function () {
         mockVRFCoordinator = fixture.mockVRFCoordinator;
         mockLinkToken = fixture.mockLinkToken;
         mockOracle = mockOracle;
+        mockBreedingContract = mockBreedingContract;
 
         ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");
     });
@@ -312,6 +318,137 @@ describe("IdleProcioneNFT", function () {
 
                 await expect(attacker.attack(tokenId, newData))
                     .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            });
+        });
+    });
+
+    describe("Professioni", function () {
+        let tokenId;
+        
+        beforeEach(async function () {
+            // Setup iniziale per i test delle professioni
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            // Simula risposta VRF per completare il mint
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+            
+            // Setup del contratto delle professioni
+            await idleProcioneNFT.setProfessionsContract(addr2.address);
+            
+            // Setup del contratto di breeding
+            await idleProcioneNFT.setEggContract(mockBreedingContract.target);
+
+            // Setup del levelUpContract per permettere l'aggiornamento dei dati
+            await idleProcioneNFT.setLevelUpContract(owner.address);
+        });
+
+        describe("Requisiti per le Professioni", function () {
+            it("Non dovrebbe permettere di impostare una professione se il livello è insufficiente", async function () {
+                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 1))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientLevel");
+            });
+
+            it("Non dovrebbe permettere di impostare una professione se il breeding è insufficiente", async function () {
+                // Aumenta il livello ma mantiene breeding basso
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                const newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+
+                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 1))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientBreeding");
+            });
+
+            it("Non dovrebbe permettere di impostare una professione se ne è già presente una", async function () {
+                // Setup dei requisiti
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+                
+                // Simula breeding count
+                await mockBreedingContract.setBreedCount(tokenId, 2);
+                
+                // Prima impostazione della professione
+                await idleProcioneNFT.connect(addr2).setProfession(tokenId, 1);
+                
+                // Tentativo di reimpostare la professione
+                await expect(idleProcioneNFT.connect(addr2).setProfession(tokenId, 2))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "ProfessionAlreadySet");
+            });
+        });
+
+        describe("Gestione Esperienza e Livelli", function () {
+            beforeEach(async function () {
+                // Setup dei requisiti per la professione
+                const data = await idleProcioneNFT.getProcioneData(tokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId, newData);
+                
+                // Simula breeding count
+                await mockBreedingContract.setBreedCount(tokenId, 2);
+                
+                // Imposta la professione
+                await idleProcioneNFT.connect(addr2).setProfession(tokenId, 1);
+            });
+
+            it("Dovrebbe permettere di aggiungere esperienza", async function () {
+                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 100);
+                
+                const [, , exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                expect(exp).to.equal(100);
+            });
+
+            it("Dovrebbe limitare l'esperienza al massimo consentito", async function () {
+                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 70000);
+                
+                const [, , exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                expect(exp).to.equal(65535); // Massimo valore per 16 bit
+            });
+
+            it("Dovrebbe calcolare correttamente l'esperienza richiesta per il livello successivo", async function () {
+                const requiredExp = await idleProcioneNFT.getRequiredExpForNextLevel(tokenId);
+                // professionBaseStep * (currentLevel + 1)^2, dove currentLevel = 1
+                const expectedExp = 100 * Math.pow(2, 2); // 100 * 4 = 400
+                expect(requiredExp).to.equal(expectedExp);
+            });
+
+            it("Dovrebbe permettere il level up quando c'è abbastanza esperienza", async function () {
+                // Aggiungi esperienza sufficiente per il level up (400 per livello 1->2)
+                await idleProcioneNFT.connect(addr2).setProfessionExp(tokenId, 400);
+                
+                await expect(idleProcioneNFT.connect(addr1).professionLevelUp(tokenId))
+                    .to.emit(idleProcioneNFT, "ProfessionLevelUp")
+                    .withArgs(tokenId, 2);
+                
+                const [, level, exp] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                expect(level).to.equal(2);
+                expect(exp).to.equal(0); // L'exp dovrebbe essere resettata
+            });
+
+            it("Non dovrebbe permettere il level up con esperienza insufficiente", async function () {
+                await expect(idleProcioneNFT.connect(addr1).professionLevelUp(tokenId))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "InsufficientExp");
+            });
+        });
+
+        describe("Controlli di Accesso", function () {
+            it("Solo il contratto delle professioni può impostare una professione", async function () {
+                await expect(idleProcioneNFT.connect(addr1).setProfession(tokenId, 1))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            });
+
+            it("Solo il contratto delle professioni può aggiungere esperienza", async function () {
+                await expect(idleProcioneNFT.connect(addr1).setProfessionExp(tokenId, 100))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+            });
+
+            it("Solo il proprietario del token può effettuare il level up", async function () {
+                await expect(idleProcioneNFT.connect(addr2).professionLevelUp(tokenId))
+                    .to.be.revertedWithCustomError(idleProcioneNFT, "NotTokenOwner");
             });
         });
     });
