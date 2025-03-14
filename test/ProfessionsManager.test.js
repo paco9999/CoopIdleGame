@@ -265,6 +265,63 @@ describe("ProfessionsManager", function () {
             await expect(professionsManager.connect(addr1).lockCraftingSlot(tokenId, duration))
                 .to.be.revertedWithCustomError(professionsManager, "UnauthorizedCaller");
         });
+
+        // Test per unlockCraftingSlot
+        it("Dovrebbe permettere di sbloccare uno slot specifico", async function () {
+            const duration = 3600;
+            await professionsManager.connect(craftingManagerSigner).lockCraftingSlot(tokenId, duration);
+            await professionsManager.connect(craftingManagerSigner).unlockCraftingSlot(tokenId, 0);
+            expect(await professionsManager.getFreeCraftingSlots(tokenId)).to.equal(1);
+        });
+
+        it("Non dovrebbe permettere di sbloccare uno slot con indice non valido", async function () {
+            const duration = 3600;
+            await professionsManager.connect(craftingManagerSigner).lockCraftingSlot(tokenId, duration);
+            await expect(professionsManager.connect(craftingManagerSigner).unlockCraftingSlot(tokenId, 1))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidSlotIndex");
+        });
+
+        it("Non dovrebbe permettere di sbloccare uno slot già sbloccato", async function () {
+            const duration = 3600;
+            await professionsManager.connect(craftingManagerSigner).lockCraftingSlot(tokenId, duration);
+            await professionsManager.connect(craftingManagerSigner).unlockCraftingSlot(tokenId, 0);
+            await expect(professionsManager.connect(craftingManagerSigner).unlockCraftingSlot(tokenId, 0))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidSlotIndex");
+        });
+
+        // Test per setAvailableCraftingSlots
+        it("Dovrebbe permettere di impostare il numero di slot disponibili", async function () {
+            await professionsManager.connect(craftingManagerSigner).setAvailableCraftingSlots(tokenId, 1);
+            expect(await professionsManager.getFreeCraftingSlots(tokenId)).to.equal(1);
+        });
+
+        it("Non dovrebbe permettere di impostare più slot del massimo consentito", async function () {
+            await expect(professionsManager.connect(craftingManagerSigner).setAvailableCraftingSlots(tokenId, 2))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidSlotCount");
+        });
+
+        // Test per getArtisanLevel e setArtisanLevel
+        it("Dovrebbe restituire il livello corretto dell'artigiano", async function () {
+            expect(await professionsManager.getArtisanLevel(tokenId)).to.equal(1);
+        });
+
+        it("Dovrebbe permettere di impostare il livello dell'artigiano", async function () {
+            await professionsManager.connect(craftingManagerSigner).setArtisanLevel(tokenId, 3);
+            expect(await professionsManager.getArtisanLevel(tokenId)).to.equal(3);
+            expect(await professionsManager.getFreeCraftingSlots(tokenId)).to.equal(4); // Livello 3: 4 slot
+        });
+
+        it("Non dovrebbe permettere di impostare un livello non valido", async function () {
+            await expect(professionsManager.connect(craftingManagerSigner).setArtisanLevel(tokenId, 0))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidLevel");
+            await expect(professionsManager.connect(craftingManagerSigner).setArtisanLevel(tokenId, 6))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidLevel");
+        });
+
+        it("Solo il CraftingManager dovrebbe poter impostare il livello", async function () {
+            await expect(professionsManager.connect(addr1).setArtisanLevel(tokenId, 2))
+                .to.be.revertedWithCustomError(professionsManager, "UnauthorizedCaller");
+        });
     });
 
     describe("Admin Functions", function () {

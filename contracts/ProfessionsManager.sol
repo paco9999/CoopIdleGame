@@ -57,6 +57,8 @@ contract ProfessionsManager is
     event CraftingManagerUpdated(address indexed oldManager, address indexed newManager);
     event CraftingSlotLocked(uint256 indexed tokenId, uint256 slotIndex, uint256 unlockTime);
     event CraftingSlotUnlocked(uint256 indexed tokenId, uint256 slotIndex);
+    event CraftingSlotsUpdated(uint256 indexed tokenId, uint256 slots);
+    event ArtisanLevelUpdated(uint256 indexed tokenId, uint256 level);
 
     // ========== Custom Errors ==========
     // General Errors
@@ -75,6 +77,10 @@ contract ProfessionsManager is
     error UnauthorizedCaller();
     error NoFreeCraftingSlots();
     error InvalidProfession();
+    error InvalidSlotIndex();
+    error SlotAlreadyUnlocked();
+    error InvalidSlotCount();
+    error InvalidLevel();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -233,6 +239,71 @@ contract ProfessionsManager is
         artisanSlotUnlockTime[tokenId][firstFreeSlotIndex] = block.timestamp + duration;
         
         emit CraftingSlotLocked(tokenId, firstFreeSlotIndex, block.timestamp + duration);
+    }
+
+    /// @notice Sblocca uno slot di crafting di un artigiano
+    /// @param tokenId ID del token dell'artigiano
+    /// @param slotIndex Indice dello slot da sbloccare
+    function unlockCraftingSlot(uint256 tokenId, uint256 slotIndex) external {
+        if (msg.sender != craftingManager) revert UnauthorizedCaller();
+        
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.ARTISAN) revert InvalidProfession();
+        
+        if (slotIndex >= artisanLockedSlots[tokenId]) revert InvalidSlotIndex();
+        if (artisanSlotUnlockTime[tokenId][slotIndex] == 0) revert SlotAlreadyUnlocked();
+        
+        artisanLockedSlots[tokenId]--;
+        artisanSlotUnlockTime[tokenId][slotIndex] = 0;
+        
+        emit CraftingSlotUnlocked(tokenId, slotIndex);
+    }
+
+    /// @notice Imposta il numero di slot disponibili per un artigiano
+    /// @param tokenId ID del token dell'artigiano
+    /// @param slots Numero di slot da impostare
+    function setAvailableCraftingSlots(uint256 tokenId, uint256 slots) external {
+        if (msg.sender != craftingManager) revert UnauthorizedCaller();
+        
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.ARTISAN) revert InvalidProfession();
+        
+        uint256 maxSlots = _getArtisanTotalSlots(level);
+        if (slots > maxSlots) revert InvalidSlotCount();
+        
+        // Resetta gli slot bloccati
+        artisanLockedSlots[tokenId] = maxSlots - slots;
+        for (uint256 i = 0; i < maxSlots; i++) {
+            artisanSlotUnlockTime[tokenId][i] = 0;
+        }
+        
+        emit CraftingSlotsUpdated(tokenId, slots);
+    }
+
+    /// @notice Ottiene il livello di un artigiano
+    /// @param tokenId ID del token dell'artigiano
+    /// @return Livello dell'artigiano
+    function getArtisanLevel(uint256 tokenId) external view returns (uint256) {
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.ARTISAN) revert InvalidProfession();
+        return level;
+    }
+
+    /// @notice Imposta il livello di un artigiano
+    /// @param tokenId ID del token dell'artigiano
+    /// @param level Nuovo livello
+    function setArtisanLevel(uint256 tokenId, uint256 level) external {
+        if (msg.sender != craftingManager) revert UnauthorizedCaller();
+        
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.ARTISAN) revert InvalidProfession();
+        if (level == 0 || level > 5) revert InvalidLevel();
+        
+        uint256 data = nftContract.getProcioneData(tokenId);
+        data = StatsLib.setProfessionLevel(data, level);
+        nftContract.updateProcioneData(tokenId, data);
+        
+        emit ArtisanLevelUpdated(tokenId, level);
     }
 
     // ========== View Functions ==========

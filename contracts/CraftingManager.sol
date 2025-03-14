@@ -8,7 +8,8 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./interfaces/ICOM.sol";
 import "./interfaces/ICraftedItemNFT.sol";
-import "./ProfessionsManager.sol";
+import "./interfaces/IMaterialsNFT.sol";
+import "./interfaces/IProfessionsManager.sol";
 
 /// @title CraftingManager
 /// @author Il tuo nome
@@ -46,7 +47,8 @@ contract CraftingManager is
     // Core Contract References
     ICOM public comToken;
     ICraftedItemNFT public craftedItemNFT;
-    ProfessionsManager public professionsManager;
+    IMaterialsNFT public materialsNFT;
+    IProfessionsManager public professionsManager;
     address public treasury;
     
     // Recipe Management
@@ -118,8 +120,13 @@ contract CraftingManager is
 
         comToken = ICOM(_comToken);
         craftedItemNFT = ICraftedItemNFT(_craftedItemNFT);
-        professionsManager = ProfessionsManager(_professionsManager);
+        professionsManager = IProfessionsManager(_professionsManager);
         treasury = _treasury;
+    }
+
+    function setMaterialsNFT(address _materialsNFT) external onlyOwner {
+        if (_materialsNFT == address(0)) revert InvalidAddress();
+        materialsNFT = IMaterialsNFT(_materialsNFT);
     }
 
     // ========== External Functions ==========
@@ -250,6 +257,28 @@ contract CraftingManager is
         );
     }
 
+    /// @notice Aggiorna i parametri di una ricetta
+    /// @param recipeId ID della ricetta da aggiornare
+    /// @param feeCOM Nuova fee in token COM
+    /// @param craftingTime Nuovo tempo di crafting
+    /// @param requiredArtisanLevel Nuovo livello minimo richiesto all'artigiano
+    function updateRecipeParameters(
+        uint256 recipeId,
+        uint256 feeCOM,
+        uint256 craftingTime,
+        uint256 requiredArtisanLevel
+    ) external onlyOwner {
+        if (recipeId == 0 || recipeId > recipeCount) revert RecipeNotFound();
+        if (craftingTime == 0) revert InvalidRecipe();
+
+        Recipe storage recipe = recipes[recipeId];
+        recipe.feeCOM = feeCOM;
+        recipe.craftingTime = craftingTime;
+        recipe.requiredArtisanLevel = requiredArtisanLevel;
+
+        emit RecipeUpdated(recipeId);
+    }
+
     // ========== View Functions ==========
 
     /// @notice Ottiene i dettagli di una ricetta
@@ -274,7 +303,11 @@ contract CraftingManager is
         uint256[] memory materialIds,
         uint256[] memory amounts
     ) internal view returns (bool) {
-        // TODO: Implementare la logica di verifica dei materiali
+        for (uint256 i = 0; i < materialIds.length; i++) {
+            if (materialsNFT.balanceOf(user, materialIds[i]) < amounts[i]) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -284,12 +317,19 @@ contract CraftingManager is
         uint256[] memory materialIds,
         uint256[] memory amounts
     ) internal {
-        // TODO: Implementare la logica di consumo dei materiali
+        materialsNFT.burnBatch(user, materialIds, amounts);
     }
 
     /// @dev Trova un artigiano disponibile con il livello richiesto
     function _getAvailableArtisan(uint256 requiredLevel) internal view returns (address artisan, uint256 artisanId) {
-        // TODO: Implementare la logica di ricerca dell'artigiano
+        IProfessionsManager.ArtisanInfo[] memory artisans = professionsManager.getProfessionMembers();
+        
+        for (uint256 i = 0; i < artisans.length; i++) {
+            if (artisans[i].level >= requiredLevel && artisans[i].availableCraftingSlots > 0) {
+                return (artisans[i].owner, i);
+            }
+        }
+        
         return (address(0), 0);
     }
 
@@ -310,7 +350,7 @@ contract CraftingManager is
     /// @notice Aggiorna l'indirizzo del contratto ProfessionsManager
     function setProfessionsManager(address _newProfessionsManager) external onlyOwner {
         if (_newProfessionsManager == address(0)) revert InvalidAddress();
-        professionsManager = ProfessionsManager(_newProfessionsManager);
+        professionsManager = IProfessionsManager(_newProfessionsManager);
     }
 
     /// @notice Aggiorna l'indirizzo della tesoreria
