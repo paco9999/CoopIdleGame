@@ -41,11 +41,16 @@ contract ProfessionsManager is
     mapping(uint256 => uint256) private artisanLockedSlots;
     mapping(uint256 => mapping(uint256 => uint256)) private artisanSlotUnlockTime;
 
+    // Medic Specific Variables
+    address public medicManager;
+    mapping(uint256 => uint256) private medicCooldowns; // tokenId => timestamp di fine cooldown
+
     // Constants
     uint256 private constant MIN_LEVEL_FOR_PROFESSION = 5;
     uint256 private constant MIN_BREEDING_FOR_PROFESSION = 2;
     uint256 private constant INITIAL_PROFESSION_LEVEL = 1;
     uint256 private constant INITIAL_PROFESSION_EXP = 0;
+    uint256 private constant HOURS_TO_SECONDS = 3600;
 
     // ========== Events ==========
     // General Events
@@ -64,6 +69,11 @@ contract ProfessionsManager is
     event CraftingSlotUnlocked(uint256 indexed tokenId, uint256 slotIndex);
     event CraftingSlotsUpdated(uint256 indexed tokenId, uint256 slots);
     event ArtisanLevelUpdated(uint256 indexed tokenId, uint256 level);
+
+    // Medic Specific Events
+    event MedicManagerUpdated(address indexed oldManager, address indexed newManager);
+    event MedicCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
+    event MedicCooldownExpired(uint256 indexed tokenId);
 
     // ========== Custom Errors ==========
     // General Errors
@@ -86,6 +96,11 @@ contract ProfessionsManager is
     error SlotAlreadyUnlocked();
     error InvalidSlotCount();
     error InvalidLevel();
+
+    // Medic Specific Errors
+    error NotMedicManager();
+    error NotMedic();
+    error MedicOnCooldown();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -418,6 +433,66 @@ contract ProfessionsManager is
     
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    // ========== Medic Specific Functions ==========
+
+    /// @notice Ottiene il cooldown in secondi per un medico in base al suo livello
+    /// @param level Il livello del medico
+    /// @return Il cooldown in secondi
+    function getMedicCooldown(uint256 level) public pure returns (uint256) {
+        if (level == 1) return 12 * HOURS_TO_SECONDS;
+        if (level == 2) return 10 * HOURS_TO_SECONDS;
+        if (level == 3) return 8 * HOURS_TO_SECONDS;
+        if (level == 4) return 6 * HOURS_TO_SECONDS;
+        if (level == 5) return 5 * HOURS_TO_SECONDS;
+        if (level == 6) return 4 * HOURS_TO_SECONDS;
+        if (level == 7) return 3 * HOURS_TO_SECONDS;
+        if (level == 8) return 2 * HOURS_TO_SECONDS;
+        if (level == 9) return 90 minutes;
+        if (level == 10) return 1 * HOURS_TO_SECONDS;
+        return 12 * HOURS_TO_SECONDS; // Default al cooldown massimo
+    }
+
+    /// @notice Attiva il cooldown per un medico
+    /// @param tokenId L'ID del token del medico
+    function activateCooldown(uint256 tokenId) external {
+        if (msg.sender != medicManager) revert NotMedicManager();
+        
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.MEDIC) revert NotMedic();
+        
+        uint256 cooldownDuration = getMedicCooldown(level);
+        uint256 cooldownEnd = block.timestamp + cooldownDuration;
+        medicCooldowns[tokenId] = cooldownEnd;
+        
+        emit MedicCooldownActivated(tokenId, cooldownEnd);
+    }
+
+    /// @notice Verifica se un medico è in cooldown
+    /// @param tokenId L'ID del token del medico
+    /// @return true se il medico è in cooldown, false altrimenti
+    function isOnCooldown(uint256 tokenId) public view returns (bool) {
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.MEDIC) revert NotMedic();
+        
+        uint256 cooldownEnd = medicCooldowns[tokenId];
+        if (cooldownEnd == 0) return false;
+        
+        if (block.timestamp >= cooldownEnd) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// @notice Imposta l'indirizzo del MedicManager
+    /// @param _newManager Il nuovo indirizzo del MedicManager
+    function setMedicManager(address _newManager) external onlyOwner {
+        if (_newManager == address(0)) revert InvalidAddress();
+        address oldManager = medicManager;
+        medicManager = _newManager;
+        emit MedicManagerUpdated(oldManager, _newManager);
     }
 
     // ========== Internal Functions ==========

@@ -415,6 +415,136 @@ describe("ProfessionsManager", function () {
         });
     });
 
+    describe("Funzionalità Medic", function () {
+        let tokenId;
+        let medicManagerSigner;
+
+        beforeEach(async function () {
+            // Setup per il mint e l'assegnazione della professione Medic
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId, newData);
+            await mockBreedingContract.setBreedCount(tokenId, 2);
+            await professionsManager.connect(addr1).assignProfession(tokenId, 2); // MEDIC
+
+            // Setup del MedicManager
+            const signers = await ethers.getSigners();
+            medicManagerSigner = signers[3];
+            await professionsManager.setMedicManager(medicManagerSigner.address);
+        });
+
+        describe("Gestione Cooldown", function () {
+            it("Dovrebbe calcolare correttamente il cooldown per ogni livello", async function () {
+                const cooldowns = {
+                    1: 12 * 3600, // 12 ore
+                    2: 10 * 3600,
+                    3: 8 * 3600,
+                    4: 6 * 3600,
+                    5: 5 * 3600,
+                    6: 4 * 3600,
+                    7: 3 * 3600,
+                    8: 2 * 3600,
+                    9: 5400,    // 1.5 ore
+                    10: 3600    // 1 ora
+                };
+
+                for (let level = 1; level <= 10; level++) {
+                    expect(await professionsManager.getMedicCooldown(level)).to.equal(cooldowns[level]);
+                }
+            });
+
+            it("Dovrebbe attivare il cooldown correttamente", async function () {
+                const tx = await professionsManager.connect(medicManagerSigner).activateCooldown(tokenId);
+                const receipt = await tx.wait();
+                
+                const cooldownEvent = receipt.logs.find(
+                    log => log.fragment && log.fragment.name === 'MedicCooldownActivated'
+                );
+                expect(cooldownEvent).to.not.be.undefined;
+
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.true;
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown da non-MedicManager", async function () {
+                await expect(professionsManager.connect(addr1).activateCooldown(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "NotMedicManager");
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown per non-Medici", async function () {
+                // Creiamo un nuovo procione con professione Artisan
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                await professionsManager.connect(addr2).assignProfession(tokenId2, 1); // ARTISAN
+
+                await expect(professionsManager.connect(medicManagerSigner).activateCooldown(tokenId2))
+                    .to.be.revertedWithCustomError(professionsManager, "NotMedic");
+            });
+
+            it("Dovrebbe gestire correttamente la scadenza del cooldown", async function () {
+                await professionsManager.connect(medicManagerSigner).activateCooldown(tokenId);
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 12 ore (cooldown per livello 1)
+                await time.increase(12 * 3600);
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe applicare il cooldown corretto in base al livello", async function () {
+                // Level up il medico al livello 2
+                await professionsManager.connect(addr1).addProfessionExp(tokenId, 400);
+                await professionsManager.connect(addr1).professionLevelUp(tokenId);
+
+                await professionsManager.connect(medicManagerSigner).activateCooldown(tokenId);
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 9 ore (ancora in cooldown per livello 2 che è 10 ore)
+                await time.increase(9 * 3600);
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isOnCooldown(tokenId)).to.be.false;
+            });
+        });
+
+        describe("Gestione MedicManager", function () {
+            it("Dovrebbe permettere all'owner di impostare il MedicManager", async function () {
+                const newManager = addr2.address;
+                await expect(professionsManager.setMedicManager(newManager))
+                    .to.emit(professionsManager, "MedicManagerUpdated")
+                    .withArgs(medicManagerSigner.address, newManager);
+            });
+
+            it("Non dovrebbe permettere di impostare un MedicManager con indirizzo zero", async function () {
+                await expect(professionsManager.setMedicManager(ethers.ZeroAddress))
+                    .to.be.revertedWithCustomError(professionsManager, "InvalidAddress");
+            });
+
+            it("Non dovrebbe permettere a non-owner di impostare il MedicManager", async function () {
+                await expect(professionsManager.connect(addr1).setMedicManager(addr2.address))
+                    .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                    .withArgs(addr1.address);
+            });
+        });
+    });
+
     describe("Admin Functions", function () {
         it("Dovrebbe permettere all'owner di impostare il limite delle professioni", async function () {
             await professionsManager.setProfessionLimit(1, 500);
