@@ -2,63 +2,39 @@
 pragma solidity ^0.8.20;
 
 contract MockProfessionsManager {
-    struct ArtisanInfo {
-        address owner;
-        uint256 level;
-        uint256 availableCraftingSlots;
-    }
+    mapping(uint256 => uint256) private _professions; // tokenId => profession
+    mapping(uint256 => bool) private _cooldowns; // tokenId => isOnCooldown
+    uint256[] private _medicIds; // Array di tutti i medici
 
-    mapping(address => uint256) private artisanLevels;
-    mapping(uint256 => uint256) private lockedSlots;
-    ArtisanInfo[] private members;
-
-    function setArtisanLevel(address artisan, uint256 level) external {
-        artisanLevels[artisan] = level;
-        bool found = false;
-        for (uint256 i = 0; i < members.length; i++) {
-            if (members[i].owner == artisan) {
-                members[i].level = level;
-                found = true;
-                break;
-            }
-        }
-        if (!found && level > 0) {
-            members.push(ArtisanInfo({
-                owner: artisan,
-                level: level,
-                availableCraftingSlots: 5
-            }));
+    function assignProfession(uint256 tokenId, uint256 profession) external {
+        _professions[tokenId] = profession;
+        if (profession == 1) { // Se è un medico
+            _medicIds.push(tokenId);
         }
     }
 
-    function getArtisanLevel(address artisan) external view returns (uint256) {
-        return artisanLevels[artisan];
+    function getProfession(uint256 tokenId) external view returns (uint256) {
+        return _professions[tokenId];
     }
 
-    function lockCraftingSlot(uint256 artisanIndex, uint256 duration) external {
-        require(artisanIndex < members.length, "Invalid artisan index");
-        require(members[artisanIndex].availableCraftingSlots > 0, "No slots available");
-        members[artisanIndex].availableCraftingSlots--;
-        lockedSlots[artisanIndex]++;
+    function activateCooldown(uint256 tokenId) external {
+        _cooldowns[tokenId] = true;
     }
 
-    function unlockCraftingSlot(uint256 artisanIndex) external {
-        require(artisanIndex < members.length, "Invalid artisan index");
-        require(lockedSlots[artisanIndex] > 0, "No locked slots");
-        members[artisanIndex].availableCraftingSlots++;
-        lockedSlots[artisanIndex]--;
+    function isOnCooldown(uint256 tokenId) external view returns (bool) {
+        return _cooldowns[tokenId];
     }
 
-    function setAvailableCraftingSlots(address artisan, uint256 slots) external {
-        for (uint256 i = 0; i < members.length; i++) {
-            if (members[i].owner == artisan) {
-                members[i].availableCraftingSlots = slots;
-                break;
-            }
+    function getMembersByProfession(uint256 profession) external view returns (uint256[] memory) {
+        if (profession == 1) { // Se richiediamo i medici
+            return _medicIds;
         }
+        return new uint256[](0);
     }
 
-    function getProfessionMembers() external view returns (ArtisanInfo[] memory) {
-        return members;
+    function setAllMedicsOnCooldown() external {
+        for (uint256 i = 0; i < _medicIds.length; i++) {
+            _cooldowns[_medicIds[i]] = true;
+        }
     }
 } 

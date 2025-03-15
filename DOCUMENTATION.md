@@ -55,27 +55,63 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Eventi per modifiche stato
 - Validazioni professione
 
-### 3. CraftingManager.sol
+### 3. MedicManager.sol
+**Gestione delle Cure e dei Medici**
+- Sistema di cura per NFT
+- Gestione fee e ricompense
+- Integrazione con sistema cooldown
+- Supporto per cure singole e multiple
+
+**Funzionalità Chiave:**
+- `heal()`: Cura singolo NFT usando un medico disponibile
+- `healBatch()`: Cura multipli NFT usando medici diversi
+- `getAvailableMedic()`: Trova medico disponibile
+- Sistema di fee configurabile
+- Distribuzione automatica ricompense
+- Integrazione con cooldown medici
+
+**Sistema di Fee:**
+- Fee base configurabile
+- Percentuale configurabile per medici
+- Distribuzione automatica tra medico e tesoreria
+- Calcolo proporzionale per cure multiple
+
+**Sicurezza e Controlli:**
+- Verifica disponibilità medici
+- Controllo salute NFT
+- Gestione autorizzazioni
+- Sistema anti-reentrancy
+- Meccanismo di pausa
+- Validazioni COM token
+
+**Eventi e Logging:**
+- Tracking cure effettuate
+- Monitoraggio fee
+- Log modifiche configurazione
+- Eventi per cure multiple
+- Tracking aggiornamenti contratto
+
+### 4. CraftingManager.sol
 **Sistema di Crafting**
 - Gestione ricette
 - Sistema di materiali
 - Slot di crafting temporizzati
 - Integrazione con professioni
 
-### 4. MaterialsNFT.sol
+### 5. MaterialsNFT.sol
 **Gestione Materiali**
 - ERC1155 per materiali
 - Sistema di rarità
 - Integrazione con crafting
 
-### 5. IdleProcioneBreeding.sol
+### 6. IdleProcioneBreeding.sol
 **Sistema di Riproduzione**
 - Meccanica di breeding
 - Ereditarietà dei tratti
 - Cooldown system
 - Requisiti di breeding
 
-### 6. IdleProcioneLeveling.sol
+### 7. IdleProcioneLeveling.sol
 **Sistema di Livellamento**
 - Progressione del livello
 - Sistema di esperienza
@@ -117,6 +153,15 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Ereditarietà dei tratti
 - Requisiti minimi
 - Limiti di breeding
+
+### Sistema di Cure
+- Cura singola o multipla di NFT
+- Fee configurabili per servizio
+- Ricompense automatiche per medici
+- Integrazione con sistema cooldown
+- Verifica automatica stato salute
+- Gestione efficiente cure multiple
+- Distribuzione equa tra medici
 
 ## Librerie Utilizzate
 
@@ -205,6 +250,13 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Gestione cooldown
 - Calcolo genetica
 
+### IMedicManager
+- Funzioni di cura NFT
+- Gestione fee e ricompense
+- Configurazione sistema
+- Eventi e logging
+- Controlli amministrativi
+
 ## Note Tecniche
 
 ### Versioni
@@ -239,6 +291,9 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Efficient mappings
 - Gestione efficiente cooldown
 - Validazioni ottimizzate
+- Ottimizzazione cure multiple
+- Gestione efficiente array
+- Minimizzazione storage
 
 ### Sicurezza
 - Pause mechanism
@@ -248,6 +303,9 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Sistema di autorizzazioni per manager
 - Validazioni professione
 - Controlli limiti di livello
+- Protezione cure multiple
+- Validazione medici
+- Controllo fee e pagamenti
 
 ### Storage e Bit-Packing
 - Ottimizzazione dello storage tramite bit-packing
@@ -264,12 +322,6 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Eventi per cooldown medici
 - Eventi per limiti di livello
 - Tracking modifiche manager
-
-### Autorizzazioni e Sicurezza
-- Sistema modulare di autorizzazioni
-- Controlli granulari per operazioni
-- Validazione dei limiti
-- Protezione da overflow/underflow
-- Gestione sicura delle modifiche alla salute
-- Manager dedicati per funzionalità specifiche
-- Controlli di accesso per professioni 
+- Tracking cure NFT
+- Monitoraggio fee medici
+- Log cure multiple 
