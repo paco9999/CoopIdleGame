@@ -22,6 +22,25 @@ contract MockIdleProcioneNFT is ERC721 {
         return tokenId;
     }
 
+    function mintFromEgg(
+        address to,
+        uint256 genetics,
+        uint256 class,
+        uint256 faction
+    ) external returns (uint256) {
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
+        _safeMint(to, tokenId);
+
+        // Crea i dati del procione usando i parametri forniti
+        uint256 data = genetics;
+        data |= (class << StatsLib.CLASS_POSITION);
+        data |= (faction << StatsLib.FACTION_POSITION);
+        _procioneData[tokenId] = data;
+
+        return tokenId;
+    }
+
     function updateProcioneData(uint256 tokenId, uint256 newData) external {
         require(_exists(tokenId), "Token does not exist");
         _procioneData[tokenId] = newData;
