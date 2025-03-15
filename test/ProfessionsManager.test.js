@@ -200,6 +200,97 @@ describe("ProfessionsManager", function () {
         });
     });
 
+    describe("Gestione Limiti di Livello", function () {
+        let tokenId;
+
+        beforeEach(async function () {
+            // Setup per il mint e l'assegnazione della professione
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId, newData);
+            await mockBreedingContract.setBreedCount(tokenId, 2);
+            await professionsManager.connect(addr1).assignProfession(tokenId, 2); // Assegna MEDIC
+        });
+
+        it("Dovrebbe avere un limite di livello di default di 100", async function () {
+            expect(await professionsManager.getProfessionMaxLevel(2)).to.equal(100);
+        });
+
+        it("Dovrebbe permettere all'owner di impostare un nuovo limite di livello", async function () {
+            await expect(professionsManager.setProfessionMaxLevel(2, 50))
+                .to.emit(professionsManager, "ProfessionMaxLevelUpdated")
+                .withArgs(2, 50);
+
+            expect(await professionsManager.getProfessionMaxLevel(2)).to.equal(50);
+        });
+
+        it("Non dovrebbe permettere di impostare un limite di livello a 0", async function () {
+            await expect(professionsManager.setProfessionMaxLevel(2, 0))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidLevel");
+        });
+
+        it("Non dovrebbe permettere a non-owner di impostare il limite di livello", async function () {
+            await expect(professionsManager.connect(addr1).setProfessionMaxLevel(2, 50))
+                .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                .withArgs(addr1.address);
+        });
+
+        it("Dovrebbe rispettare il limite di livello durante il level up", async function () {
+            // Imposta un limite basso per il test
+            await professionsManager.setProfessionMaxLevel(2, 2);
+            
+            // Level up al livello 2 (dovrebbe funzionare)
+            await professionsManager.connect(addr1).addProfessionExp(tokenId, 400);
+            await professionsManager.connect(addr1).professionLevelUp(tokenId);
+            
+            // Prova a fare level up oltre il limite
+            await professionsManager.connect(addr1).addProfessionExp(tokenId, 900);
+            await expect(professionsManager.connect(addr1).professionLevelUp(tokenId))
+                .to.be.revertedWithCustomError(professionsManager, "InvalidLevel");
+        });
+
+        it("Dovrebbe mantenere il limite speciale di livello 5 per gli Artisan", async function () {
+            // Crea un nuovo procione e assegnagli la professione Artisan
+            await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+            await idleProcioneNFT.connect(addr2).randomMint();
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            const tokenId2 = 1;
+            const data = await idleProcioneNFT.getProcioneData(tokenId2);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId2, newData);
+            await mockBreedingContract.setBreedCount(tokenId2, 2);
+            await professionsManager.connect(addr2).assignProfession(tokenId2, 1); // ARTISAN
+
+            // Verifica che il limite sia 5 anche se impostiamo un limite diverso
+            await professionsManager.setProfessionMaxLevel(1, 10);
+            expect(await professionsManager.isValidProfessionLevel(1, 6)).to.be.false;
+            expect(await professionsManager.isValidProfessionLevel(1, 5)).to.be.true;
+        });
+
+        it("Dovrebbe validare correttamente i livelli delle professioni", async function () {
+            expect(await professionsManager.isValidProfessionLevel(2, 0)).to.be.false; // 0 non è valido
+            expect(await professionsManager.isValidProfessionLevel(2, 1)).to.be.true; // 1 è valido
+            expect(await professionsManager.isValidProfessionLevel(2, 100)).to.be.true; // 100 è valido (default)
+            expect(await professionsManager.isValidProfessionLevel(2, 101)).to.be.false; // 101 non è valido
+            
+            // Imposta un nuovo limite e verifica
+            await professionsManager.setProfessionMaxLevel(2, 50);
+            expect(await professionsManager.isValidProfessionLevel(2, 50)).to.be.true; // 50 è valido
+            expect(await professionsManager.isValidProfessionLevel(2, 51)).to.be.false; // 51 non è valido
+        });
+    });
+
     describe("Funzionalità Artisan", function () {
         let tokenId;
         let craftingManagerSigner;

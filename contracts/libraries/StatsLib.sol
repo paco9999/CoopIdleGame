@@ -9,20 +9,7 @@ library StatsLib {
     enum Professions {
         NONE,           // 0
         ARTISAN,        // 1
-        MEDIC,          // 2
-        MINATORE,       // 3
-        ALCHIMISTA,     // 4
-        PESCATORE,      // 5
-        CACCIATORE,     // 6
-        CUOCO,          // 7
-        GIARDINIERE,    // 8
-        BOSCAIOLO,      // 9
-        FABBRO,         // 10
-        SARTO,          // 11
-        INGEGNERE,      // 12
-        MAGO,           // 13
-        GUERRIERO,      // 14
-        ESPLORATORE     // 15
+        MEDIC           // 2
     }
 
     // ========== Constants ==========

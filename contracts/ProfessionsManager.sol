@@ -32,6 +32,10 @@ contract ProfessionsManager is
     mapping(uint256 => mapping(uint256 => uint256)) private professionLevels;
     uint256 public professionBaseStep;
 
+    // Profession Level Limits
+    mapping(uint256 => uint256) private professionMaxLevels;
+    uint256 private constant DEFAULT_MAX_LEVEL = 100;
+
     // Artisan Specific Variables
     address public craftingManager;
     mapping(uint256 => uint256) private artisanLockedSlots;
@@ -52,6 +56,7 @@ contract ProfessionsManager is
     event ProfessionExpAdded(uint256 indexed tokenId, uint256 expAdded);
     event ProfessionLevelUp(uint256 indexed tokenId, uint256 newLevel);
     event ProfessionBaseStepUpdated(uint256 oldValue, uint256 newValue);
+    event ProfessionMaxLevelUpdated(StatsLib.Professions indexed profession, uint256 maxLevel);
 
     // Artisan Specific Events
     event CraftingManagerUpdated(address indexed oldManager, address indexed newManager);
@@ -169,6 +174,9 @@ contract ProfessionsManager is
         
         (StatsLib.Professions profession, uint256 currentLevel, uint256 currentExp) = nftContract.getProfessionInfo(tokenId);
         if (profession == StatsLib.Professions.NONE) revert ProfessionNotFound();
+        
+        // Check if next level would exceed max level
+        if (!isValidProfessionLevel(profession, currentLevel + 1)) revert InvalidLevel();
         
         uint256 requiredExp = _calculateRequiredExp(currentLevel);
         if (currentExp < requiredExp) revert InsufficientExp();
@@ -341,6 +349,36 @@ contract ProfessionsManager is
 
     function getProfessionMemberCount(StatsLib.Professions profession) external view returns (uint256) {
         return professionMembers[uint256(profession)].length;
+    }
+
+    // ========== Level Limit Functions ==========
+
+    /// @notice Imposta il limite massimo di livello per una professione
+    /// @param profession La professione per cui impostare il limite
+    /// @param maxLevel Il nuovo limite massimo di livello
+    function setProfessionMaxLevel(StatsLib.Professions profession, uint256 maxLevel) external onlyOwner {
+        if (maxLevel == 0) revert InvalidLevel();
+        professionMaxLevels[uint256(profession)] = maxLevel;
+        emit ProfessionMaxLevelUpdated(profession, maxLevel);
+    }
+
+    /// @notice Ottiene il limite massimo di livello per una professione
+    /// @param profession La professione di cui ottenere il limite
+    /// @return Il limite massimo di livello per la professione
+    function getProfessionMaxLevel(StatsLib.Professions profession) public view returns (uint256) {
+        uint256 maxLevel = professionMaxLevels[uint256(profession)];
+        return maxLevel == 0 ? DEFAULT_MAX_LEVEL : maxLevel;
+    }
+
+    /// @notice Verifica se un livello è valido per una professione
+    /// @param profession La professione da verificare
+    /// @param level Il livello da verificare
+    /// @return true se il livello è valido, false altrimenti
+    function isValidProfessionLevel(StatsLib.Professions profession, uint256 level) public view returns (bool) {
+        if (profession == StatsLib.Professions.ARTISAN) {
+            return level > 0 && level <= 5;
+        }
+        return level > 0 && level <= getProfessionMaxLevel(profession);
     }
 
     // ========== Admin Functions ==========
