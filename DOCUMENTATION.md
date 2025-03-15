@@ -29,6 +29,8 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Gestione livelli e esperienza
 - Sistema speciale per Artigiani
 - Slot di crafting basati su livello
+- Sistema di cooldown per Medici
+- Limiti di livello personalizzabili per professione
 
 **Funzionalità Chiave:**
 - `assignProfession()`: Assegnazione professione
@@ -36,6 +38,22 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - `professionLevelUp()`: Aumento di livello
 - Sistema di slot per crafting
 - Limiti per professione
+- Gestione cooldown medici
+- Limiti di livello configurabili
+
+**Sistema di Limiti di Livello:**
+- Limite di default: 100 livelli
+- Limiti personalizzabili per professione
+- Limite speciale per Artigiani (max 5)
+- Validazione automatica dei livelli
+- Eventi per tracking modifiche
+
+**Sistema Medici:**
+- Cooldown basato sul livello (da 12 a 1 ora)
+- Gestione autorizzazioni via MedicManager
+- Tracking stato cooldown
+- Eventi per modifiche stato
+- Validazioni professione
 
 ### 3. CraftingManager.sol
 **Sistema di Crafting**
@@ -84,6 +102,9 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Livellamento individuale
 - Abilità speciali per professione
 - Sistema di slot per Artigiani
+- Sistema di cooldown per Medici
+- Limiti di livello configurabili
+- Gestione autorizzazioni granulare
 
 ### Sistema di Crafting
 - Ricette multiple
@@ -208,17 +229,25 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - 3 mint per wallet
 - Limiti professioni
 - Cooldown breeding
+- Limiti di livello per professione
+- Cooldown medici basati su livello
+- Limite speciale Artigiani (5 livelli)
 
 ### Considerazioni Gas
 - Ottimizzazione storage
 - Batch operations
 - Efficient mappings
+- Gestione efficiente cooldown
+- Validazioni ottimizzate
 
 ### Sicurezza
 - Pause mechanism
 - Access control
 - Rate limiting
 - Reentrancy protection
+- Sistema di autorizzazioni per manager
+- Validazioni professione
+- Controlli limiti di livello
 
 ### Storage e Bit-Packing
 - Ottimizzazione dello storage tramite bit-packing
@@ -232,10 +261,15 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Tracciamento delle modifiche alla salute
 - Logging delle autorizzazioni
 - Monitoraggio delle operazioni critiche
+- Eventi per cooldown medici
+- Eventi per limiti di livello
+- Tracking modifiche manager
 
 ### Autorizzazioni e Sicurezza
 - Sistema modulare di autorizzazioni
 - Controlli granulari per operazioni
 - Validazione dei limiti
 - Protezione da overflow/underflow
-- Gestione sicura delle modifiche alla salute 
+- Gestione sicura delle modifiche alla salute
+- Manager dedicati per funzionalità specifiche
+- Controlli di accesso per professioni 
