@@ -46,4 +46,10 @@ interface IIdleProcioneNFT {
     /// @param tokenId ID del token
     /// @param profession Nuova professione del procione
     function setProfession(uint256 tokenId, StatsLib.Professions profession) external;
+
+    /// @notice Modifica la salute corrente di un procione
+    /// @param tokenId ID del token
+    /// @param amount Quantità di salute da modificare
+    /// @param isAddition True se aggiungere salute, False se sottrarre
+    function modifyCurrentHealth(uint256 tokenId, uint256 amount, bool isAddition) external;
 } 

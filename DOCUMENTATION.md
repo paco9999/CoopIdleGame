@@ -13,6 +13,7 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Integrazione con Chainlink VRF
 - Gestione delle fazioni e classi
 - Sistema di livellamento base
+- Sistema di gestione della salute corrente
 
 **Funzionalità Chiave:**
 - `randomMint()`: Mint casuale con Chainlink VRF
@@ -20,6 +21,7 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Sistema di whitelist integrato
 - Gestione dei tratti genetici
 - Limiti per fazioni e classi
+- Gestione della salute corrente con autorizzazioni
 
 ### 2. ProfessionsManager.sol
 **Gestione delle Professioni**
@@ -70,6 +72,13 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Mutazioni casuali
 - Sistema di rarità per tratti
 
+### Sistema di Salute
+- Doppio sistema di salute (massima e corrente)
+- Gestione autorizzazioni per modifiche
+- Limiti automatici (0 - salute massima)
+- Eventi per tracciamento modifiche
+- Integrazione con contratti esterni
+
 ### Sistema di Professioni
 - 16 professioni disponibili
 - Livellamento individuale
@@ -99,6 +108,9 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Gestione statistiche
 - Calcolo progressione
 - Storage ottimizzato
+- Sistema bit-packing per statistiche
+- Gestione salute corrente e massima
+- Controlli automatici dei limiti
 
 ### WhitelistLib
 - Gestione whitelist
@@ -118,6 +130,8 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Sistema di pausa per emergenze
 - Controlli di proprietà
 - Limiti e rate limiting
+- Sistema di autorizzazioni per modifiche della salute
+- Controlli automatici dei limiti per la salute
 
 ### Ottimizzazioni Gas
 - Storage packing
@@ -162,6 +176,8 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Funzioni core NFT
 - Gestione dati Procione
 - Interfaccia professioni
+- Gestione salute corrente
+- Sistema di autorizzazioni
 
 ### IIdleProcioneBreeding
 - Funzioni breeding
@@ -202,4 +218,24 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Pause mechanism
 - Access control
 - Rate limiting
-- Reentrancy protection 
+- Reentrancy protection
+
+### Storage e Bit-Packing
+- Ottimizzazione dello storage tramite bit-packing
+- Gestione efficiente delle statistiche
+- Posizionamento ottimale dei campi
+- Maschere per l'accesso ai dati
+- Separazione tra salute massima e corrente
+
+### Eventi e Logging
+- Eventi dettagliati per modifiche di stato
+- Tracciamento delle modifiche alla salute
+- Logging delle autorizzazioni
+- Monitoraggio delle operazioni critiche
+
+### Autorizzazioni e Sicurezza
+- Sistema modulare di autorizzazioni
+- Controlli granulari per operazioni
+- Validazione dei limiti
+- Protezione da overflow/underflow
+- Gestione sicura delle modifiche alla salute 

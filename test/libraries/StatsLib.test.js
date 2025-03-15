@@ -24,6 +24,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getSpeedMask()).to.equal(0xFF);        // 8 bit
       expect(await statsLibTest.getIntelligenceMask()).to.equal(0xFF); // 8 bit
       expect(await statsLibTest.getAccuracyMask()).to.equal(0xFF);     // 8 bit
+      expect(await statsLibTest.getCurrentHealthMask()).to.equal(0xFF); // 8 bit
       expect(await statsLibTest.getBreedingMask()).to.equal(0xFF);     // 8 bit
       expect(await statsLibTest.getGeneticsMask()).to.equal("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"); // 32 bit
       expect(await statsLibTest.getClassMask()).to.equal(0xFF);        // 8 bit
@@ -41,6 +42,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getSpeedPosition()).to.equal(41);
       expect(await statsLibTest.getIntelligencePosition()).to.equal(49);
       expect(await statsLibTest.getAccuracyPosition()).to.equal(57);
+      expect(await statsLibTest.getCurrentHealthPosition()).to.equal(65);
       expect(await statsLibTest.getBreedingPosition()).to.equal(80);
       expect(await statsLibTest.getGeneticsPosition()).to.equal(64);
       expect(await statsLibTest.getClassPosition()).to.equal(128);
@@ -133,6 +135,136 @@ describe("StatsLib", function() {
       const updatedData = await statsLibTest.setProfessionExp(initialData, profExp);
       const result = await statsLibTest.getProfessionExp(updatedData);
       expect(result).to.equal(profExp);
+    });
+
+    it("Dovrebbe inizializzare CURRENT_HEALTH allo stesso valore di HEALTH", async function() {
+      const health = await statsLibTest.extractField(initialData, await statsLibTest.getHealthMask(), await statsLibTest.getHealthPosition());
+      const currentHealth = await statsLibTest.getCurrentHealth(initialData);
+      expect(currentHealth).to.equal(health);
+    });
+
+    it("Dovrebbe impostare CURRENT_HEALTH correttamente", async function() {
+      const newHealth = 50;
+      const updatedData = await statsLibTest.setCurrentHealth(initialData, newHealth);
+      const currentHealth = await statsLibTest.getCurrentHealth(updatedData);
+      expect(currentHealth).to.equal(newHealth);
+    });
+
+    it("Non dovrebbe permettere CURRENT_HEALTH superiore a HEALTH", async function() {
+      const health = await statsLibTest.extractField(initialData, await statsLibTest.getHealthMask(), await statsLibTest.getHealthPosition());
+      const newHealth = health + 1n;
+      const updatedData = await statsLibTest.setCurrentHealth(initialData, newHealth);
+      const currentHealth = await statsLibTest.getCurrentHealth(updatedData);
+      expect(currentHealth).to.equal(health);
+    });
+
+    describe("Modifica di CURRENT_HEALTH", function() {
+      it("Dovrebbe aggiungere salute correttamente", async function() {
+        const initialData = await statsLibTest.createInitialData();
+        const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+        const maxHealth = await statsLibTest.extractField(
+            initialData,
+            await statsLibTest.getHealthMask(),
+            await statsLibTest.getHealthPosition()
+        );
+        const delta = 10;
+        
+        console.log("=== Test Addizione Salute ===");
+        console.log("Salute Iniziale:", initialHealth.toString());
+        console.log("Salute Massima:", maxHealth.toString());
+        console.log("Delta:", delta);
+        
+        const newData = await statsLibTest.modifyCurrentHealth(initialData, delta, true);
+        const newHealth = await statsLibTest.getCurrentHealth(newData);
+        
+        console.log("Salute Finale:", newHealth.toString());
+        console.log("==================");
+        
+        // La salute non deve superare maxHealth
+        expect(newHealth).to.equal(maxHealth);
+      });
+
+      it("Dovrebbe sottrarre salute correttamente", async function() {
+        const initialData = await statsLibTest.createInitialData();
+        const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+        const delta = 10;
+        
+        console.log("=== Test Sottrazione Salute ===");
+        console.log("Salute Iniziale:", initialHealth.toString());
+        console.log("Delta:", delta);
+        
+        const newData = await statsLibTest.modifyCurrentHealth(initialData, delta, false);
+        const newHealth = await statsLibTest.getCurrentHealth(newData);
+        
+        console.log("Salute Finale:", newHealth.toString());
+        console.log("==================");
+        
+        expect(newHealth).to.equal(initialHealth - BigInt(delta));
+      });
+
+      it("Non dovrebbe permettere salute negativa", async function() {
+        const initialData = await statsLibTest.createInitialData();
+        const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+        const delta = initialHealth + BigInt(10);
+        
+        console.log("=== Test Protezione Salute Negativa ===");
+        console.log("Salute Iniziale:", initialHealth.toString());
+        console.log("Delta:", delta.toString());
+        
+        const newData = await statsLibTest.modifyCurrentHealth(initialData, delta, false);
+        const newHealth = await statsLibTest.getCurrentHealth(newData);
+        
+        console.log("Salute Finale:", newHealth.toString());
+        console.log("==================");
+        
+        expect(newHealth).to.equal(0);
+      });
+
+      it("Non dovrebbe permettere salute superiore a HEALTH", async function() {
+        const initialData = await statsLibTest.createInitialData();
+        const maxHealth = await statsLibTest.extractField(
+            initialData,
+            await statsLibTest.getHealthMask(),
+            await statsLibTest.getHealthPosition()
+        );
+        const delta = maxHealth + BigInt(10);
+        
+        console.log("=== Test Limite Massimo Salute ===");
+        console.log("Salute Iniziale:", (await statsLibTest.getCurrentHealth(initialData)).toString());
+        console.log("Salute Massima:", maxHealth.toString());
+        console.log("Delta:", delta.toString());
+        
+        const newData = await statsLibTest.modifyCurrentHealth(initialData, delta, true);
+        const newHealth = await statsLibTest.getCurrentHealth(newData);
+        
+        console.log("Salute Finale:", newHealth.toString());
+        console.log("==================");
+        
+        expect(newHealth).to.equal(maxHealth);
+      });
+
+      it("Dovrebbe gestire l'overflow nella somma", async function() {
+        const initialData = await statsLibTest.createInitialData();
+        const maxHealth = await statsLibTest.extractField(
+            initialData,
+            await statsLibTest.getHealthMask(),
+            await statsLibTest.getHealthPosition()
+        );
+        const delta = ethers.MaxUint256;
+        
+        console.log("=== Test Gestione Overflow ===");
+        console.log("Salute Iniziale:", (await statsLibTest.getCurrentHealth(initialData)).toString());
+        console.log("Salute Massima:", maxHealth.toString());
+        console.log("Delta:", delta.toString());
+        
+        const newData = await statsLibTest.modifyCurrentHealth(initialData, delta, true);
+        const newHealth = await statsLibTest.getCurrentHealth(newData);
+        
+        console.log("Salute Finale:", newHealth.toString());
+        console.log("==================");
+        
+        expect(newHealth).to.equal(maxHealth);
+      });
     });
   });
 

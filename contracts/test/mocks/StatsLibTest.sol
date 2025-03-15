@@ -37,6 +37,10 @@ contract StatsLibTest {
         return StatsLib.ACCURACY_MASK;
     }
 
+    function getCurrentHealthMask() public pure returns (uint256) {
+        return StatsLib.CURRENT_HEALTH_MASK;
+    }
+
     function getBreedingMask() public pure returns (uint256) {
         return StatsLib.BREEDING_MASK;
     }
@@ -92,6 +96,10 @@ contract StatsLibTest {
 
     function getAccuracyPosition() public pure returns (uint256) {
         return StatsLib.ACCURACY_POSITION;
+    }
+
+    function getCurrentHealthPosition() public pure returns (uint256) {
+        return StatsLib.CURRENT_HEALTH_POSITION;
     }
 
     function getBreedingPosition() public pure returns (uint256) {
@@ -196,5 +204,18 @@ contract StatsLibTest {
 
     function getProfessionExp(uint256 data) public pure returns (uint256) {
         return StatsLib.getProfessionExp(data);
+    }
+
+    // Funzioni per CURRENT_HEALTH
+    function getCurrentHealth(uint256 data) public pure returns (uint256) {
+        return StatsLib.getCurrentHealth(data);
+    }
+
+    function setCurrentHealth(uint256 data, uint256 newHealth) public pure returns (uint256) {
+        return StatsLib.setCurrentHealth(data, newHealth);
+    }
+
+    function modifyCurrentHealth(uint256 data, uint256 delta, bool isAddition) public pure returns (uint256) {
+        return StatsLib.modifyCurrentHealth(data, delta, isAddition);
     }
 } 

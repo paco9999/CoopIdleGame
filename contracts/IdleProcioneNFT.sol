@@ -56,6 +56,7 @@ contract IdleProcioneNFT is
     // Storage
     mapping(uint256 => uint256) private _procioneData;
     mapping(uint256 => address) private requestToSender;
+    mapping(address => bool) public authorizedHealthModifiers;
 
     // Contratti autorizzati
     address public levelUpContract;
@@ -98,6 +99,8 @@ contract IdleProcioneNFT is
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
     event LevelUpContractUpdated(address indexed oldContract, address indexed newContract);
     event ProfessionsContractUpdated(address indexed oldContract, address indexed newContract);
+    event HealthModifierAuthorized(address indexed modifierAddress, bool authorized);
+    event CurrentHealthModified(uint256 indexed tokenId, uint256 oldHealth, uint256 newHealth);
     event ProfessionBaseStepUpdated(uint256 oldValue, uint256 newValue);
     event ProfessionSet(uint256 indexed tokenId, uint256 profession);
     event ProfessionLevelUp(uint256 indexed tokenId, uint256 newLevel);
@@ -465,6 +468,32 @@ contract IdleProcioneNFT is
     /// @return bool True se il token esiste
     function _exists(uint256 tokenId) internal view virtual returns (bool) {
         return _ownerOf(tokenId) != address(0);
+    }
+
+    /// @notice Autorizza o revoca l'autorizzazione a un contratto per modificare CURRENT_HEALTH
+    /// @param modifierIndirizzo Indirizzo del contratto da autorizzare/revocare
+    /// @param authorized True per autorizzare, False per revocare
+    function setHealthModifierAuthorization(address modifierIndirizzo, bool authorized) external onlyOwner {
+        if (modifierIndirizzo == address(0)) revert InvalidAddress();
+        authorizedHealthModifiers[modifierIndirizzo] = authorized;
+        emit HealthModifierAuthorized(modifierIndirizzo, authorized);
+    }
+
+    /// @notice Modifica il valore di CURRENT_HEALTH di un procione
+    /// @param tokenId ID del procione
+    /// @param delta Valore da aggiungere/sottrarre
+    /// @param isAddition True per aggiungere, False per sottrarre
+    function modifyCurrentHealth(uint256 tokenId, uint256 delta, bool isAddition) external {
+        if (!authorizedHealthModifiers[msg.sender]) revert UnauthorizedCaller();
+        if (!_exists(tokenId)) revert TokenNotExists();
+
+        uint256 oldData = _procioneData[tokenId];
+        uint256 oldHealth = StatsLib.getCurrentHealth(oldData);
+        uint256 newData = StatsLib.modifyCurrentHealth(oldData, delta, isAddition);
+        _procioneData[tokenId] = newData;
+
+        emit CurrentHealthModified(tokenId, oldHealth, StatsLib.getCurrentHealth(newData));
+        emit DataUpdated(tokenId, newData);
     }
 
     receive() external payable {}

@@ -34,6 +34,7 @@ library StatsLib {
     uint256 constant SPEED_MASK = 0xFF;        // 41-48
     uint256 constant INTELLIGENCE_MASK = 0xFF; // 49-56
     uint256 constant ACCURACY_MASK = 0xFF;     // 57-64
+    uint256 constant CURRENT_HEALTH_MASK = 0xFF; // 65-72
     uint256 constant BREEDING_MASK = 0xFF;     // 80-87
     uint256 public constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
     uint256 constant CLASS_MASK = 0xFF;        // 128-135
@@ -50,6 +51,7 @@ library StatsLib {
     uint256 constant SPEED_POSITION = 41;
     uint256 constant INTELLIGENCE_POSITION = 49;
     uint256 constant ACCURACY_POSITION = 57;
+    uint256 constant CURRENT_HEALTH_POSITION = 65;
     uint256 constant BREEDING_POSITION = 80;
     uint256 public constant GENETICS_POSITION = 64;
     uint256 constant CLASS_POSITION = 128;
@@ -82,6 +84,7 @@ library StatsLib {
         data = updateField(data, INITIAL_XP, XP_MASK, XP_POSITION);
         data = updateField(data, INITIAL_LEVEL, LEVEL_MASK, LEVEL_POSITION);
         data = updateField(data, INITIAL_HEALTH, HEALTH_MASK, HEALTH_POSITION);
+        data = updateField(data, INITIAL_HEALTH, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION); // Inizializza CURRENT_HEALTH allo stesso valore di HEALTH
         data = updateField(data, INITIAL_STATS, STRENGTH_MASK, STRENGTH_POSITION);
         data = updateField(data, INITIAL_STATS, SPEED_MASK, SPEED_POSITION);
         data = updateField(data, INITIAL_STATS, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
@@ -226,5 +229,58 @@ library StatsLib {
     function setProfessionExp(uint256 stats, uint256 exp) internal pure returns (uint256) {
         require(exp <= 65535, "Profession exp too high");
         return updateField(stats, exp, PROFESSIONEXP_MASK, PROFESSIONEXP_POSITION);
+    }
+
+    /// @notice Ottiene il valore corrente della salute
+    /// @param stats I dati dell'NFT
+    /// @return Il valore corrente della salute
+    function getCurrentHealth(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
+    }
+
+    /// @notice Modifica il valore corrente della salute
+    /// @param stats I dati dell'NFT
+    /// @param newHealth Il nuovo valore della salute
+    /// @return I dati aggiornati
+    function setCurrentHealth(uint256 stats, uint256 newHealth) internal pure returns (uint256) {
+        uint256 maxHealth = extractField(stats, HEALTH_MASK, HEALTH_POSITION);
+        
+        // Applica i limiti
+        if (newHealth > maxHealth) {
+            newHealth = maxHealth;
+        }
+        // Non serve controllare < 0 perché uint256 non può essere negativo
+        
+        return updateField(stats, newHealth, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
+    }
+
+    /// @notice Modifica il valore corrente della salute aggiungendo o sottraendo un valore
+    /// @param stats I dati dell'NFT
+    /// @param delta Il valore da aggiungere (positivo) o sottrarre (negativo)
+    /// @param isAddition True se il delta va aggiunto, False se va sottratto
+    /// @return I dati aggiornati
+    function modifyCurrentHealth(uint256 stats, uint256 delta, bool isAddition) internal pure returns (uint256) {
+        uint256 currentHealth = getCurrentHealth(stats);
+        uint256 maxHealth = extractField(stats, HEALTH_MASK, HEALTH_POSITION);
+        uint256 newHealth;
+        
+        if (isAddition) {
+            unchecked {
+                newHealth = currentHealth + delta;
+                // Se c'è overflow o supera maxHealth, imposta a maxHealth
+                if (newHealth < currentHealth || newHealth > maxHealth) {
+                    newHealth = maxHealth;
+                }
+            }
+        } else {
+            // Sottrazione con controllo underflow
+            if (delta >= currentHealth) {
+                newHealth = 0;
+            } else {
+                newHealth = currentHealth - delta;
+            }
+        }
+        
+        return updateField(stats, newHealth, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
     }
 } 

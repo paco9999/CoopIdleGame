@@ -17,6 +17,7 @@ describe("IdleProcioneNFT", function () {
     let mockOracle;
     let ReentrancyAttacker;
     let mockBreedingContract;
+    let statsLibTest;
 
     // Parametri per il deploy
     const NAME = "IdleProcioneNFT";
@@ -36,6 +37,10 @@ describe("IdleProcioneNFT", function () {
 
         const MockLinkToken = await ethers.getContractFactory("MockLinkToken");
         const _mockLinkToken = await MockLinkToken.deploy();
+
+        // Deploy StatsLibTest
+        const StatsLibTest = await ethers.getContractFactory("StatsLibTest");
+        const _statsLibTest = await StatsLibTest.deploy();
 
         // Deploy IdleProcioneNFT with proxy
         const IdleProcioneNFTFactory = await ethers.getContractFactory("IdleProcioneNFT");
@@ -58,7 +63,8 @@ describe("IdleProcioneNFT", function () {
             addr1: _addr1, 
             addr2: _addr2, 
             mockVRFCoordinator: _mockVRFCoordinator, 
-            mockLinkToken: _mockLinkToken 
+            mockLinkToken: _mockLinkToken,
+            statsLibTest: _statsLibTest
         };
     }
 
@@ -85,6 +91,7 @@ describe("IdleProcioneNFT", function () {
         mockLinkToken = fixture.mockLinkToken;
         mockOracle = mockOracle;
         mockBreedingContract = mockBreedingContract;
+        statsLibTest = fixture.statsLibTest;
 
         ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");
     });
@@ -303,6 +310,110 @@ describe("IdleProcioneNFT", function () {
             
             await expect(idleProcioneNFT.connect(addr1).updateProcioneData(0, 123))
                 .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+        });
+    });
+
+    describe("Current Health Management", function() {
+        let tokenId;
+        let authorizedContract;
+
+        beforeEach(async function() {
+            // Deploy un contratto mock autorizzato
+            const MockAuthorizedContract = await ethers.getContractFactory("MockBreedingContract");
+            authorizedContract = await MockAuthorizedContract.deploy();
+            await authorizedContract.waitForDeployment();
+
+            // Mint un NFT per i test
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            tokenId = 0;
+        });
+
+        it("Should allow owner to authorize health modifiers", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            expect(await idleProcioneNFT.authorizedHealthModifiers(contractAddress)).to.be.true;
+        });
+
+        it("Should prevent unauthorized contracts from modifying health", async function() {
+            await expect(idleProcioneNFT.connect(addr1).modifyCurrentHealth(tokenId, 10, true))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
+        });
+
+        it("Should prevent modifying health for non-existent tokens", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            await expect(authorizedContract.modifyHealth(idleProcioneNFT.target, 999, 10, true))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+        });
+
+        it("Should correctly modify health within limits", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            
+            // Get initial data
+            const initialData = await idleProcioneNFT.getProcioneData(tokenId);
+            const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+            
+            // Add health
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 10, true);
+            let newData = await idleProcioneNFT.getProcioneData(tokenId);
+            let newHealth = await statsLibTest.getCurrentHealth(newData);
+            expect(newHealth).to.equal(initialHealth + BigInt(10));
+            
+            // Subtract health
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 5, false);
+            newData = await idleProcioneNFT.getProcioneData(tokenId);
+            newHealth = await statsLibTest.getCurrentHealth(newData);
+            expect(newHealth).to.equal(initialHealth + BigInt(5));
+        });
+
+        it("Should emit correct events when modifying health", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            
+            const initialData = await idleProcioneNFT.getProcioneData(tokenId);
+            const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+            
+            await expect(authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 10, true))
+                .to.emit(idleProcioneNFT, "CurrentHealthModified")
+                .withArgs(tokenId, initialHealth, initialHealth + BigInt(10))
+                .and.to.emit(idleProcioneNFT, "DataUpdated");
+        });
+
+        it("Should not exceed maximum health", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            const maxHealth = await statsLibTest.extractField(
+                data, 
+                await statsLibTest.getHealthMask(), 
+                await statsLibTest.getHealthPosition()
+            );
+            
+            // Try to add more than max health
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, maxHealth + BigInt(100), true);
+            
+            const newData = await idleProcioneNFT.getProcioneData(tokenId);
+            const newHealth = await statsLibTest.getCurrentHealth(newData);
+            expect(newHealth).to.equal(maxHealth);
+        });
+
+        it("Should not go below zero health", async function() {
+            const contractAddress = await authorizedContract.getAddress();
+            await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
+            
+            // Try to subtract more than current health
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 1000, false);
+            
+            const newData = await idleProcioneNFT.getProcioneData(tokenId);
+            const newHealth = await statsLibTest.getCurrentHealth(newData);
+            expect(newHealth).to.equal(0);
         });
     });
 }); 
