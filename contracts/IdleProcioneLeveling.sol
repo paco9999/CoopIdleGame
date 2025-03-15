@@ -81,15 +81,16 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
         if (!rToken.transferFrom(msg.sender, treasuryAddress, fee)) revert TransferFailed();
 
         uint256 newXP = currentXP - requiredXP;
-        if (newXP > currentXP) revert InvalidXPDeduction();
+        if (newXP > type(uint256).max || newXP > currentXP) revert InvalidXPDeduction();
         
-        data = _updateLevelAndXP(data, currentLevel + 1, newXP);
+        uint256 newLevel = currentLevel + 1;
+        data = _updateLevelAndXP(data, newLevel, newXP);
         data = _updateStats(data);
-        data = _updateBreedingSlots(data, currentLevel + 1);
+        data = _updateBreedingSlots(data, newLevel);
 
         nftContract.updateProcioneData(tokenId, data);
 
-        emit LevelUp(tokenId, currentLevel + 1, newXP, fee);
+        emit LevelUp(tokenId, newLevel, newXP, fee);
     }
 
     // ========== View Functions ==========
@@ -144,13 +145,14 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
     function _updateStats(uint256 data) private pure returns (uint256) {
         unchecked {
             uint256[4] memory stats;
-            stats[0] = data.extractField(StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION) + 2;
-            stats[1] = data.extractField(StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION) + 2;
-            stats[2] = data.extractField(StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION) + 2;
-            stats[3] = data.extractField(StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION) + 2;
+            stats[0] = data.extractField(StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION);
+            stats[1] = data.extractField(StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION);
+            stats[2] = data.extractField(StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION);
+            stats[3] = data.extractField(StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION);
 
             for(uint256 i = 0; i < 4; i++) {
-                if (stats[i] > 255) revert InvalidStats();
+                if (stats[i] > 253) revert InvalidStats(); // 255 - 2 per permettere l'incremento
+                stats[i] += 2;
             }
 
             data = data.updateField(stats[0], StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION);
@@ -163,8 +165,8 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
     function _updateBreedingSlots(uint256 data, uint256 newLevel) private pure returns (uint256) {
         if (newLevel == 3 || newLevel == 10 || newLevel == 20 || newLevel == 35 || newLevel == 50) {
             uint256 currentBreeding = data.extractField(StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+            if (currentBreeding >= 5) revert InvalidStats(); // Massimo 5 slot di breeding
             uint256 newBreeding = currentBreeding + 1;
-            if (newBreeding > StatsLib.BREEDING_MASK) revert InvalidStats();
             return data.updateField(newBreeding, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
         }
         return data;

@@ -24,23 +24,23 @@ describe("IdleProcioneLeveling", function () {
     const MAX_LEVEL = 50;
 
     // Costanti per le maschere
-    const XP_MASK = "0xFF";
-    const LEVEL_MASK = "0xFF";
-    const HEALTH_MASK = "0xFF";
-    const STRENGTH_MASK = "0xFF";
-    const SPEED_MASK = "0xFF";
-    const INTELLIGENCE_MASK = "0xFF";
-    const ACCURACY_MASK = "0xFF";
-    const BREEDING_MASK = "0xFF";
+    const XP_MASK = "0x1FFFF";        // 0-16 (17 bit)
+    const LEVEL_MASK = "0xFF";        // 17-24
+    const HEALTH_MASK = "0xFF";       // 25-32
+    const STRENGTH_MASK = "0xFF";     // 33-40
+    const SPEED_MASK = "0xFF";        // 41-48
+    const INTELLIGENCE_MASK = "0xFF"; // 49-56
+    const ACCURACY_MASK = "0xFF";     // 57-64
+    const BREEDING_MASK = "0xFF";     // 80-87
 
     // Costanti per le posizioni
     const XP_POSITION = "0";
-    const LEVEL_POSITION = "8";
-    const HEALTH_POSITION = "16";
-    const STRENGTH_POSITION = "24";
-    const SPEED_POSITION = "32";
-    const INTELLIGENCE_POSITION = "40";
-    const ACCURACY_POSITION = "48";
+    const LEVEL_POSITION = "17";
+    const HEALTH_POSITION = "25";
+    const STRENGTH_POSITION = "33";
+    const SPEED_POSITION = "41";
+    const INTELLIGENCE_POSITION = "49";
+    const ACCURACY_POSITION = "57";
     const BREEDING_POSITION = "80";
 
     beforeEach(async function () {
@@ -76,7 +76,7 @@ describe("IdleProcioneLeveling", function () {
         const tx = await mockNFT.simpleMint(addr1.address);
         const receipt = await tx.wait();
         tokenId = receipt.logs[0].args[2]; // TokenId è il terzo argomento dell'evento Transfer
-        const initialData = await createInitialData(30); // 30 XP
+        const initialData = await createInitialData(BigInt(120)); // 120 XP, quadruplo del necessario per il level 1
         await mockNFT.updateProcioneData(tokenId, initialData);
     });
 
@@ -124,17 +124,18 @@ describe("IdleProcioneLeveling", function () {
         it("Dovrebbe permettere il level up quando ci sono XP sufficienti", async function () {
             // Verifica stato iniziale
             const initialData = await mockNFT.getProcioneData(tokenId);
-            const initialLevel = await extractField(initialData, LEVEL_MASK, LEVEL_POSITION);
-            const initialXP = await extractField(initialData, XP_MASK, XP_POSITION);
+            const initialLevel = BigInt(extractField(initialData, LEVEL_MASK, LEVEL_POSITION));
+            const initialXP = BigInt(extractField(initialData, XP_MASK, XP_POSITION));
+            const requiredXP = BigInt(await idleProcioneLeveling.xpForLevel(initialLevel));
             
             console.log("Stato Iniziale:", {
-                level: initialLevel,
-                xp: initialXP,
-                requiredXP: await idleProcioneLeveling.xpForLevel(initialLevel)
+                level: Number(initialLevel),
+                xp: Number(initialXP),
+                requiredXP: requiredXP
             });
 
             // Verifica che ci siano XP sufficienti
-            expect(BigInt(initialXP)).to.be.gte(await idleProcioneLeveling.xpForLevel(initialLevel),
+            expect(initialXP).to.be.gte(requiredXP,
                 "XP insufficienti per il level up");
 
             // Esegui level up
@@ -162,25 +163,23 @@ describe("IdleProcioneLeveling", function () {
 
             // Verifica stato finale
             const finalData = await mockNFT.getProcioneData(tokenId);
-            const finalLevel = await extractField(finalData, LEVEL_MASK, LEVEL_POSITION);
-            const finalXP = await extractField(finalData, XP_MASK, XP_POSITION);
+            const finalLevel = BigInt(extractField(finalData, LEVEL_MASK, LEVEL_POSITION));
+            const finalXP = BigInt(extractField(finalData, XP_MASK, XP_POSITION));
 
             console.log("Stato Finale:", {
-                level: finalLevel,
-                xp: finalXP
+                level: Number(finalLevel),
+                xp: Number(finalXP)
             });
 
             // Verifiche
-            expect(finalLevel, "Livello non incrementato correttamente").to.equal(initialLevel + 1);
-            expect(BigInt(finalXP), "XP non detratti correttamente").to.equal(
-                BigInt(initialXP) - BigInt(await idleProcioneLeveling.xpForLevel(initialLevel))
-            );
+            expect(finalLevel).to.equal(initialLevel + 1n, "Livello non incrementato correttamente");
+            expect(finalXP).to.equal(initialXP - requiredXP, "XP non detratti correttamente");
 
             // Verifica statistiche
-            const finalStrength = await extractField(finalData, STRENGTH_MASK, STRENGTH_POSITION);
-            const finalSpeed = await extractField(finalData, SPEED_MASK, SPEED_POSITION);
-            const finalIntelligence = await extractField(finalData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-            const finalAccuracy = await extractField(finalData, ACCURACY_MASK, ACCURACY_POSITION);
+            const finalStrength = BigInt(extractField(finalData, STRENGTH_MASK, STRENGTH_POSITION));
+            const finalSpeed = BigInt(extractField(finalData, SPEED_MASK, SPEED_POSITION));
+            const finalIntelligence = BigInt(extractField(finalData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            const finalAccuracy = BigInt(extractField(finalData, ACCURACY_MASK, ACCURACY_POSITION));
 
             console.log("Statistiche Finali:", {
                 strength: finalStrength,
@@ -190,18 +189,18 @@ describe("IdleProcioneLeveling", function () {
             });
 
             // Verifica che tutte le statistiche siano aumentate di 2
-            const initialStrength = await extractField(initialData, STRENGTH_MASK, STRENGTH_POSITION);
-            expect(finalStrength, "Forza non incrementata correttamente").to.equal(initialStrength + 2);
-            const initialSpeed = await extractField(initialData, SPEED_MASK, SPEED_POSITION);
-            expect(finalSpeed, "Velocità non incrementata correttamente").to.equal(initialSpeed + 2);
-            const initialIntelligence = await extractField(initialData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-            expect(finalIntelligence, "Intelligenza non incrementata correttamente").to.equal(initialIntelligence + 2);
-            const initialAccuracy = await extractField(initialData, ACCURACY_MASK, ACCURACY_POSITION);
-            expect(finalAccuracy, "Precisione non incrementata correttamente").to.equal(initialAccuracy + 2);
+            const initialStrength = BigInt(extractField(initialData, STRENGTH_MASK, STRENGTH_POSITION));
+            expect(finalStrength).to.equal(initialStrength + 2n, "Forza non incrementata correttamente");
+            const initialSpeed = BigInt(extractField(initialData, SPEED_MASK, SPEED_POSITION));
+            expect(finalSpeed).to.equal(initialSpeed + 2n, "Velocità non incrementata correttamente");
+            const initialIntelligence = BigInt(extractField(initialData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            expect(finalIntelligence).to.equal(initialIntelligence + 2n, "Intelligenza non incrementata correttamente");
+            const initialAccuracy = BigInt(extractField(initialData, ACCURACY_MASK, ACCURACY_POSITION));
+            expect(finalAccuracy).to.equal(initialAccuracy + 2n, "Precisione non incrementata correttamente");
         });
 
         it("Non dovrebbe permettere il level up senza XP sufficienti", async function () {
-            const initialData = await createInitialData(10); // 10 XP
+            const initialData = await createInitialData(20n); // 20 XP, ne servono 30
             await mockNFT.updateProcioneData(tokenId, initialData);
 
             await expect(idleProcioneLeveling.connect(addr1).levelUp(tokenId))
@@ -209,7 +208,7 @@ describe("IdleProcioneLeveling", function () {
         });
 
         it("Non dovrebbe permettere il level up oltre il livello massimo", async function () {
-            const maxLevelData = await createInitialData(1000, MAX_LEVEL);
+            const maxLevelData = await createInitialData(100000n, BigInt(MAX_LEVEL + 1)); // Livello oltre il massimo
             await mockNFT.updateProcioneData(tokenId, maxLevelData);
 
             await expect(idleProcioneLeveling.connect(addr1).levelUp(tokenId))
@@ -217,54 +216,58 @@ describe("IdleProcioneLeveling", function () {
         });
 
         it("Dovrebbe incrementare correttamente le statistiche", async function () {
+            const initialData = await createInitialData(30n, 1n, 10n); // XP sufficienti per level up
+            await mockNFT.updateProcioneData(tokenId, initialData);
+            
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
             
             const data = await mockNFT.getProcioneData(tokenId);
-            const strength = await extractField(data, STRENGTH_MASK, STRENGTH_POSITION);
-            const speed = await extractField(data, SPEED_MASK, SPEED_POSITION);
-            const intelligence = await extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-            const accuracy = await extractField(data, ACCURACY_MASK, ACCURACY_POSITION);
+            const strength = BigInt(extractField(data, STRENGTH_MASK, STRENGTH_POSITION));
+            const speed = BigInt(extractField(data, SPEED_MASK, SPEED_POSITION));
+            const intelligence = BigInt(extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            const accuracy = BigInt(extractField(data, ACCURACY_MASK, ACCURACY_POSITION));
 
-            expect(strength).to.equal(12); // 10 + 2
-            expect(speed).to.equal(12);
-            expect(intelligence).to.equal(12);
-            expect(accuracy).to.equal(12);
+            expect(strength).to.equal(12n); // 10 + 2
+            expect(speed).to.equal(12n);
+            expect(intelligence).to.equal(12n);
+            expect(accuracy).to.equal(12n);
         });
 
         it("Dovrebbe sbloccare slot breeding ai livelli corretti", async function () {
             // Setup per livello 2 con XP per arrivare a livello 3
-            const xpRequired = await idleProcioneLeveling.xpForLevel(2); // XP necessari per passare da livello 2 a 3
-            const initialData = await createInitialData(xpRequired, 2);
+            const xpRequired = BigInt(await idleProcioneLeveling.xpForLevel(2));
+            const initialData = await createInitialData(xpRequired, 2n);
             await mockNFT.updateProcioneData(tokenId, initialData);
 
             console.log("Test Breeding - Stato Iniziale:", {
-                level: await extractField(initialData, LEVEL_MASK, LEVEL_POSITION),
-                xp: await extractField(initialData, XP_MASK, XP_POSITION),
+                level: extractField(initialData, LEVEL_MASK, LEVEL_POSITION),
+                xp: extractField(initialData, XP_MASK, XP_POSITION),
                 requiredXP: xpRequired
             });
 
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
             
             const finalData = await mockNFT.getProcioneData(tokenId);
-            const finalLevel = await extractField(finalData, LEVEL_MASK, LEVEL_POSITION);
-            const breeding = await extractField(finalData, BREEDING_MASK, BREEDING_POSITION);
+            const finalLevel = BigInt(extractField(finalData, LEVEL_MASK, LEVEL_POSITION));
+            const breeding = BigInt(extractField(finalData, BREEDING_MASK, BREEDING_POSITION));
 
             console.log("Test Breeding - Stato Finale:", {
                 level: finalLevel,
                 breeding: breeding
             });
 
-            expect(finalLevel, "Livello non corretto").to.equal(3);
-            expect(breeding, "Slot breeding non sbloccato").to.equal(1); // Primo slot sbloccato al livello 3
+            expect(finalLevel).to.equal(3n, "Livello non corretto");
+            expect(breeding).to.equal(1n, "Slot breeding non sbloccato"); // Primo slot sbloccato al livello 3
         });
 
         it("Dovrebbe addebitare correttamente le fee", async function () {
             const initialTreasuryBalance = await rewardToken.balanceOf(treasury.address);
+            const expectedFee = BASE_FEE + INCREMENTO_FEE * 2n; // Fee per livello 1 -> 2
             
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
             
             const finalTreasuryBalance = await rewardToken.balanceOf(treasury.address);
-            expect(finalTreasuryBalance - initialTreasuryBalance).to.equal(BASE_FEE + INCREMENTO_FEE * 2n);
+            expect(finalTreasuryBalance - initialTreasuryBalance).to.equal(expectedFee);
         });
     });
 
@@ -362,14 +365,14 @@ describe("IdleProcioneLeveling", function () {
         it("Dovrebbe gestire correttamente il calcolo delle statistiche con valori al limite", async function () {
             // Setup di statistiche al limite (253 per permettere ancora il +2)
             const data = await mockNFT.getProcioneData(tokenId);
-            const highStats = await createInitialData(30, 1, 253);
+            const highStats = await createInitialData(BigInt(30), 1, 253);
             await mockNFT.updateProcioneData(tokenId, highStats);
 
             // Il level up dovrebbe funzionare (253 + 2 = 255)
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
 
             // Setup di statistiche oltre il limite
-            const tooHighStats = await createInitialData(30, 1, 254);
+            const tooHighStats = await createInitialData(BigInt(30), 1, 254);
             await mockNFT.updateProcioneData(tokenId, tooHighStats);
 
             // Il level up dovrebbe fallire (254 + 2 > 255)
@@ -408,29 +411,26 @@ describe("IdleProcioneLeveling", function () {
     });
 
     // Funzioni di utilità per i test
+    function extractField(data, mask, position) {
+        return (BigInt(data) >> BigInt(position)) & BigInt(mask);
+    }
+
+    function updateField(data, value, mask, position) {
+        const bigData = BigInt(data);
+        const bigValue = BigInt(value);
+        const bigMask = BigInt(mask);
+        const bigPosition = BigInt(position);
+        return (bigData & ~(bigMask << bigPosition)) | ((bigValue & bigMask) << bigPosition);
+    }
+
     async function createInitialData(xp, level = 1, baseStats = 10) {
-        let data = ethers.toBigInt(0);
+        let data = BigInt(0);
         data = updateField(data, xp, XP_MASK, XP_POSITION);
         data = updateField(data, level, LEVEL_MASK, LEVEL_POSITION);
-        data = updateField(data, baseStats, HEALTH_MASK, HEALTH_POSITION);
         data = updateField(data, baseStats, STRENGTH_MASK, STRENGTH_POSITION);
         data = updateField(data, baseStats, SPEED_MASK, SPEED_POSITION);
         data = updateField(data, baseStats, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
         data = updateField(data, baseStats, ACCURACY_MASK, ACCURACY_POSITION);
-        data = updateField(data, 0, BREEDING_MASK, BREEDING_POSITION);
         return data;
-    }
-
-    function extractField(data, mask, position) {
-        const shiftedMask = BigInt(mask) << BigInt(position);
-        const shiftedData = BigInt(data) & shiftedMask;
-        return Number(shiftedData >> BigInt(position));
-    }
-
-    function updateField(data, value, mask, position) {
-        const shiftedMask = BigInt(mask) << BigInt(position);
-        const clearedData = data & ~shiftedMask;
-        const shiftedValue = BigInt(value) << BigInt(position);
-        return clearedData | shiftedValue;
     }
 }); 

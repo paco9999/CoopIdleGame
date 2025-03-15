@@ -135,7 +135,9 @@ describe("IdleProcioneEgg", function () {
             await mockIdleProcioneNFT.updateProcioneData(parent2Id, parent2Data);
 
             // Mint dell'uovo
-            hatchTime = Math.floor(Date.now() / 1000) + 3600;
+            const currentBlock = await ethers.provider.getBlock('latest');
+            const currentTime = currentBlock.timestamp;
+            hatchTime = currentTime + INCUBATION_TIME;
             await idleProcioneEgg.connect(breedingContract).mint(
                 addr1.address,
                 parent1Id,
