@@ -4,7 +4,12 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-
+interface IIdleProcioneNFT {
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function getProcioneData(uint256 tokenId) external view returns (uint256);
+    function setDungeonStatus(uint256 tokenId, bool status) external;
+    function getCurrentHealth(uint256 tokenId) external view returns (uint256);
+}
 
 interface ICraftingManager {
     function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool);
@@ -23,12 +28,29 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         bool initialized;
     }
 
+    struct DungeonParty {
+        uint256 dungeonId;
+        uint256 procione1Id;
+        uint256 procione1Health;
+        uint256 procione2Id;
+        uint256 procione2Health;
+        uint256 procione3Id;
+        uint256 procione3Health;
+        uint256[] equippedItems;
+        uint256 endTime;
+    }
+
     // Mapping dall'ID del dungeon al tipo di dungeon
     mapping(uint256 => DungeonType) internal dungeons;
     
+    // Mapping per tenere traccia dei party attivi nei dungeon
+    mapping(uint256 => DungeonParty[]) public dungeonParties;
 
     // Indirizzo del contratto CraftingManager
     ICraftingManager public craftingManager;
+    
+    // Indirizzo del contratto IdleProcioneNFT
+    IIdleProcioneNFT public idleProcioneNFT;
 
     // Eventi
     event DungeonInitialized(
@@ -42,18 +64,33 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     event DungeonItemsUpdated(uint256 indexed dungeonId, uint256[] newItems, uint256 numberOfItemsRequired);
     event DungeonTimeUpdated(uint256 indexed dungeonId, uint256 newTime);
     event CraftingManagerAddressUpdated(address indexed newAddress);
+    event DungeonStarted(
+        uint256 indexed dungeonId,
+        uint256 procione1Id,
+        uint256 procione2Id,
+        uint256 procione3Id,
+        uint256[] equippedItems,
+        uint256 endTime
+    );
 
     // Custom Errors
     error InvalidRecipeIds();
+    error InvalidNFTOwner();
+    error InvalidHealth();
+    error DungeonNotInitialized();
+    error InvalidItemCount();
+    error InvalidProcioneCount();
 
     /**
      * @dev Costruttore che imposta gli indirizzi dei contratti necessari
-     * @param _craftedItemNFT Indirizzo del contratto CraftedItemNFT
+     * @param _idleProcioneNFT Indirizzo del contratto IdleProcioneNFT
      * @param _craftingManager Indirizzo del contratto CraftingManager
      */
-    constructor(address _craftedItemNFT, address _craftingManager) Ownable(msg.sender) {
+    constructor(address _idleProcioneNFT, address _craftingManager) Ownable(msg.sender) {
         require(_craftingManager != address(0), "Indirizzo CraftingManager non valido");
+        require(_idleProcioneNFT != address(0), "Indirizzo IdleProcioneNFT non valido");
         craftingManager = ICraftingManager(_craftingManager);
+        idleProcioneNFT = IIdleProcioneNFT(_idleProcioneNFT);
     }
     
     /**
@@ -92,11 +129,12 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         uint256 _numberOfItemsRequired
     ) external onlyOwner {
         require(_timeDuration > 0, "La durata deve essere maggiore di zero");
-        require(_numberOfItemsRequired > 0, "Il numero di oggetti richiesti deve essere maggiore di zero");
         require(_itemsRequired.length == _numberOfItemsRequired, "Il numero di oggetti forniti non corrisponde al numero richiesto");
         
-        // Verifica che gli ID corrispondano a ricette valide
-        _verifyRecipeIds(_itemsRequired);
+        // Verifica che gli ID corrispondano a ricette valide se ci sono oggetti richiesti
+        if (_numberOfItemsRequired > 0) {
+            _verifyRecipeIds(_itemsRequired);
+        }
 
         // Crea una nuova DungeonType
         DungeonType storage dungeon = dungeons[_dungeonId];
@@ -198,11 +236,12 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         uint256 _newNumberOfItemsRequired
     ) external onlyOwner {
         require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
-        require(_newNumberOfItemsRequired > 0, "Il numero di oggetti richiesti deve essere maggiore di zero");
         require(_newItems.length == _newNumberOfItemsRequired, "Il numero di oggetti forniti non corrisponde al numero richiesto");
         
-        // Verifica che gli ID corrispondano a ricette valide
-        _verifyRecipeIds(_newItems);
+        // Verifica che gli ID corrispondano a ricette valide solo se ci sono oggetti richiesti
+        if (_newNumberOfItemsRequired > 0) {
+            _verifyRecipeIds(_newItems);
+        }
 
         // Copia i nuovi oggetti richiesti
         delete dungeons[_dungeonId].itemsRequired; // Pulisce l'array esistente
@@ -225,5 +264,71 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
         dungeons[_dungeonId].timeDuration = _newTime;
         emit DungeonTimeUpdated(_dungeonId, _newTime);
+    }
+
+    /**
+     * @notice Avvia un dungeon con un team di procioni
+     * @param dungeonId ID del dungeon da avviare
+     * @param procioneIds Array di 3 ID dei procioni
+     * @param itemIds Array di ID degli oggetti da equipaggiare (opzionale)
+     */
+    function startDungeon(
+        uint256 dungeonId,
+        uint256[3] calldata procioneIds,
+        uint256[] calldata itemIds
+    ) external nonReentrant {
+        // Verifica che il dungeon esista
+        DungeonType storage dungeon = dungeons[dungeonId];
+        if (!dungeon.initialized) revert DungeonNotInitialized();
+
+        // Verifica che il numero di oggetti sia corretto
+        if (itemIds.length > 0) {
+            if (itemIds.length != dungeon.numberOfItemsRequired) revert InvalidItemCount();
+            // Verifica che gli oggetti siano validi
+            _verifyRecipeIds(itemIds);
+        }
+
+        // Verifica la proprietà e la salute dei procioni
+        uint256[3] memory healthValues;
+        for (uint256 i = 0; i < 3; i++) {
+            // Verifica la proprietà
+            if (idleProcioneNFT.ownerOf(procioneIds[i]) != msg.sender) {
+                revert InvalidNFTOwner();
+            }
+
+            // Ottieni e verifica la salute
+            uint256 currentHealth = idleProcioneNFT.getCurrentHealth(procioneIds[i]);
+            if (currentHealth == 0) revert InvalidHealth();
+            healthValues[i] = currentHealth;
+
+            // Imposta lo stato del dungeon a true
+            idleProcioneNFT.setDungeonStatus(procioneIds[i], true);
+        }
+
+        // Crea il party
+        DungeonParty memory newParty = DungeonParty({
+            dungeonId: dungeonId,
+            procione1Id: procioneIds[0],
+            procione1Health: healthValues[0],
+            procione2Id: procioneIds[1],
+            procione2Health: healthValues[1],
+            procione3Id: procioneIds[2],
+            procione3Health: healthValues[2],
+            equippedItems: itemIds,
+            endTime: block.timestamp + dungeon.timeDuration
+        });
+
+        // Aggiungi il party all'array dei party attivi
+        dungeonParties[dungeonId].push(newParty);
+
+        // Emetti l'evento
+        emit DungeonStarted(
+            dungeonId,
+            procioneIds[0],
+            procioneIds[1],
+            procioneIds[2],
+            itemIds,
+            newParty.endTime
+        );
     }
 } 

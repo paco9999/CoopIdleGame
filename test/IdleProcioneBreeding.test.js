@@ -44,8 +44,8 @@ describe("IdleProcioneBreeding", function () {
         rewardToken = await MockERC20.deploy("Reward Token", "RWD");
         govToken = await MockERC20.deploy("Gov Token", "GOV");
 
-        // Deploy dei contratti mock
-        MockIdleProcioneNFT = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
+        // Deploy del mock IdleProcioneNFT
+        const MockIdleProcioneNFT = await ethers.getContractFactory("contracts/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
         mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
 
         MockIdleProcioneEgg = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneEgg.sol:MockIdleProcioneEgg");

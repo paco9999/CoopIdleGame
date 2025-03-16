@@ -8,8 +8,8 @@ const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 describe("IdleProcioneLeveling", function () {
     let IdleProcioneLeveling;
     let idleProcioneLeveling;
-    let MockNFT;
-    let mockNFT;
+    let MockIdleProcioneNFT;
+    let mockIdleProcioneNFT;
     let RewardToken;
     let rewardToken;
     let owner;
@@ -46,10 +46,9 @@ describe("IdleProcioneLeveling", function () {
     beforeEach(async function () {
         [owner, addr1, addr2, treasury] = await ethers.getSigners();
 
-        // Deploy del mock NFT
-        MockNFT = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
-        mockNFT = await MockNFT.deploy();
-        await mockNFT.waitForDeployment();
+        // Deploy del mock IdleProcioneNFT
+        const MockIdleProcioneNFT = await ethers.getContractFactory("contracts/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
+        mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
 
         // Deploy del token di reward
         RewardToken = await ethers.getContractFactory("contracts/test/mocks/MockERC20.sol:MockERC20");
@@ -59,7 +58,7 @@ describe("IdleProcioneLeveling", function () {
         // Deploy del contratto principale
         IdleProcioneLeveling = await ethers.getContractFactory("IdleProcioneLeveling");
         idleProcioneLeveling = await IdleProcioneLeveling.deploy(
-            await mockNFT.getAddress(),
+            await mockIdleProcioneNFT.getAddress(),
             await rewardToken.getAddress(),
             treasury.address,
             BASE_FEE,
@@ -73,16 +72,16 @@ describe("IdleProcioneLeveling", function () {
         await rewardToken.connect(addr1).approve(await idleProcioneLeveling.getAddress(), ethers.MaxUint256);
 
         // Mint di un NFT per addr1 e setup dei dati iniziali
-        const tx = await mockNFT.simpleMint(addr1.address);
+        const tx = await mockIdleProcioneNFT.simpleMint(addr1.address);
         const receipt = await tx.wait();
         tokenId = receipt.logs[0].args[2]; // TokenId è il terzo argomento dell'evento Transfer
         const initialData = await createInitialData(BigInt(120)); // 120 XP, quadruplo del necessario per il level 1
-        await mockNFT.updateProcioneData(tokenId, initialData);
+        await mockIdleProcioneNFT.updateProcioneData(tokenId, initialData);
     });
 
     describe("Deployment", function () {
         it("Dovrebbe impostare correttamente i parametri iniziali", async function () {
-            expect(await idleProcioneLeveling.nftContract()).to.equal(await mockNFT.getAddress());
+            expect(await idleProcioneLeveling.nftContract()).to.equal(await mockIdleProcioneNFT.getAddress());
             expect(await idleProcioneLeveling.rToken()).to.equal(await rewardToken.getAddress());
             expect(await idleProcioneLeveling.treasuryAddress()).to.equal(treasury.address);
             expect(await idleProcioneLeveling.baseFee()).to.equal(BASE_FEE);
@@ -101,7 +100,7 @@ describe("IdleProcioneLeveling", function () {
             )).to.be.revertedWithCustomError(idleProcioneLeveling, "InvalidAddress");
 
             await expect(IdleProcioneLeveling.deploy(
-                await mockNFT.getAddress(),
+                await mockIdleProcioneNFT.getAddress(),
                 await rewardToken.getAddress(),
                 treasury.address,
                 BASE_FEE,
@@ -110,7 +109,7 @@ describe("IdleProcioneLeveling", function () {
             )).to.be.revertedWithCustomError(idleProcioneLeveling, "InvalidLevel");
 
             await expect(IdleProcioneLeveling.deploy(
-                await mockNFT.getAddress(),
+                await mockIdleProcioneNFT.getAddress(),
                 await rewardToken.getAddress(),
                 treasury.address,
                 BASE_FEE,
@@ -123,7 +122,7 @@ describe("IdleProcioneLeveling", function () {
     describe("Level Up", function () {
         it("Dovrebbe permettere il level up quando ci sono XP sufficienti", async function () {
             // Verifica stato iniziale
-            const initialData = await mockNFT.getProcioneData(tokenId);
+            const initialData = await mockIdleProcioneNFT.getProcioneData(tokenId);
             const initialLevel = BigInt(extractField(initialData, LEVEL_MASK, LEVEL_POSITION));
             const initialXP = BigInt(extractField(initialData, XP_MASK, XP_POSITION));
             const requiredXP = BigInt(await idleProcioneLeveling.xpForLevel(initialLevel));
@@ -162,7 +161,7 @@ describe("IdleProcioneLeveling", function () {
             });
 
             // Verifica stato finale
-            const finalData = await mockNFT.getProcioneData(tokenId);
+            const finalData = await mockIdleProcioneNFT.getProcioneData(tokenId);
             const finalLevel = BigInt(extractField(finalData, LEVEL_MASK, LEVEL_POSITION));
             const finalXP = BigInt(extractField(finalData, XP_MASK, XP_POSITION));
 
@@ -201,7 +200,7 @@ describe("IdleProcioneLeveling", function () {
 
         it("Non dovrebbe permettere il level up senza XP sufficienti", async function () {
             const initialData = await createInitialData(20n); // 20 XP, ne servono 30
-            await mockNFT.updateProcioneData(tokenId, initialData);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, initialData);
 
             await expect(idleProcioneLeveling.connect(addr1).levelUp(tokenId))
                 .to.be.revertedWithCustomError(idleProcioneLeveling, "InsufficientXP");
@@ -209,7 +208,7 @@ describe("IdleProcioneLeveling", function () {
 
         it("Non dovrebbe permettere il level up oltre il livello massimo", async function () {
             const maxLevelData = await createInitialData(100000n, BigInt(MAX_LEVEL + 1)); // Livello oltre il massimo
-            await mockNFT.updateProcioneData(tokenId, maxLevelData);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, maxLevelData);
 
             await expect(idleProcioneLeveling.connect(addr1).levelUp(tokenId))
                 .to.be.revertedWithCustomError(idleProcioneLeveling, "MaxLevelReached");
@@ -217,11 +216,11 @@ describe("IdleProcioneLeveling", function () {
 
         it("Dovrebbe incrementare correttamente le statistiche", async function () {
             const initialData = await createInitialData(30n, 1n, 10n); // XP sufficienti per level up
-            await mockNFT.updateProcioneData(tokenId, initialData);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, initialData);
             
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
             
-            const data = await mockNFT.getProcioneData(tokenId);
+            const data = await mockIdleProcioneNFT.getProcioneData(tokenId);
             const strength = BigInt(extractField(data, STRENGTH_MASK, STRENGTH_POSITION));
             const speed = BigInt(extractField(data, SPEED_MASK, SPEED_POSITION));
             const intelligence = BigInt(extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
@@ -237,7 +236,7 @@ describe("IdleProcioneLeveling", function () {
             // Setup per livello 2 con XP per arrivare a livello 3
             const xpRequired = BigInt(await idleProcioneLeveling.xpForLevel(2));
             const initialData = await createInitialData(xpRequired, 2n);
-            await mockNFT.updateProcioneData(tokenId, initialData);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, initialData);
 
             console.log("Test Breeding - Stato Iniziale:", {
                 level: extractField(initialData, LEVEL_MASK, LEVEL_POSITION),
@@ -247,7 +246,7 @@ describe("IdleProcioneLeveling", function () {
 
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
             
-            const finalData = await mockNFT.getProcioneData(tokenId);
+            const finalData = await mockIdleProcioneNFT.getProcioneData(tokenId);
             const finalLevel = BigInt(extractField(finalData, LEVEL_MASK, LEVEL_POSITION));
             const breeding = BigInt(extractField(finalData, BREEDING_MASK, BREEDING_POSITION));
 
@@ -344,7 +343,7 @@ describe("IdleProcioneLeveling", function () {
 
         it("Non dovrebbe permettere di inizializzare il contratto con fee parameters a zero", async function () {
             await expect(IdleProcioneLeveling.deploy(
-                await mockNFT.getAddress(),
+                await mockIdleProcioneNFT.getAddress(),
                 await rewardToken.getAddress(),
                 treasury.address,
                 0,
@@ -353,7 +352,7 @@ describe("IdleProcioneLeveling", function () {
             )).to.be.revertedWithCustomError(idleProcioneLeveling, "InvalidFeeParameters");
 
             await expect(IdleProcioneLeveling.deploy(
-                await mockNFT.getAddress(),
+                await mockIdleProcioneNFT.getAddress(),
                 await rewardToken.getAddress(),
                 treasury.address,
                 BASE_FEE,
@@ -364,16 +363,16 @@ describe("IdleProcioneLeveling", function () {
 
         it("Dovrebbe gestire correttamente il calcolo delle statistiche con valori al limite", async function () {
             // Setup di statistiche al limite (253 per permettere ancora il +2)
-            const data = await mockNFT.getProcioneData(tokenId);
+            const data = await mockIdleProcioneNFT.getProcioneData(tokenId);
             const highStats = await createInitialData(BigInt(30), 1, 253);
-            await mockNFT.updateProcioneData(tokenId, highStats);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, highStats);
 
             // Il level up dovrebbe funzionare (253 + 2 = 255)
             await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
 
             // Setup di statistiche oltre il limite
             const tooHighStats = await createInitialData(BigInt(30), 1, 254);
-            await mockNFT.updateProcioneData(tokenId, tooHighStats);
+            await mockIdleProcioneNFT.updateProcioneData(tokenId, tooHighStats);
 
             // Il level up dovrebbe fallire (254 + 2 > 255)
             await expect(idleProcioneLeveling.connect(addr1).levelUp(tokenId))

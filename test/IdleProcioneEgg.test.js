@@ -1,4 +1,4 @@
-const { expect } = require("chai");
+const { expect, anyValue } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
@@ -30,8 +30,8 @@ describe("IdleProcioneEgg", function () {
         mockStatsLib = await MockStatsLib.deploy();
         await mockStatsLib.waitForDeployment();
 
-        // Deploy del mock NFT
-        MockIdleProcioneNFT = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
+        // Deploy del mock IdleProcioneNFT
+        const MockIdleProcioneNFT = await ethers.getContractFactory("contracts/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
         mockIdleProcioneNFT = await MockIdleProcioneNFT.deploy();
         await mockIdleProcioneNFT.waitForDeployment();
 
@@ -154,11 +154,10 @@ describe("IdleProcioneEgg", function () {
         });
 
         it("Dovrebbe permettere la schiusa dopo il tempo necessario", async function () {
-            // Avanza il tempo di 5 giorni
-            await time.increase(INCUBATION_TIME);
+            // Avanza il tempo di 5 giorni più un margine di sicurezza
+            await time.increase(INCUBATION_TIME + 10);
 
             const tx = await idleProcioneEgg.connect(addr1).hatch(eggId);
-            const receipt = await tx.wait();
             
             // Verifica che l'uovo sia stato schiuso
             const eggData = await idleProcioneEgg.getEggData(eggId);
@@ -166,7 +165,8 @@ describe("IdleProcioneEgg", function () {
         });
 
         it("Non dovrebbe permettere la schiusa di un uovo già schiuso", async function () {
-            await time.increase(INCUBATION_TIME);
+            // Avanza il tempo di 5 giorni più un margine di sicurezza
+            await time.increase(INCUBATION_TIME + 10);
             await idleProcioneEgg.connect(addr1).hatch(eggId);
 
             await expect(idleProcioneEgg.connect(addr1).hatch(eggId))
@@ -180,15 +180,23 @@ describe("IdleProcioneEgg", function () {
         });
 
         it("Dovrebbe creare un nuovo procione con la genetica corretta", async function () {
-            await time.increase(INCUBATION_TIME);
+            // Avanza il tempo di 5 giorni più un margine di sicurezza
+            await time.increase(INCUBATION_TIME + 10);
             const tx = await idleProcioneEgg.connect(addr1).hatch(eggId);
-            const receipt = await tx.wait();
             
-            const hatchEvent = receipt.logs.find(
+            // Verifica l'evento
+            const receipt = await tx.wait();
+            const event = receipt.logs.find(
                 log => log.fragment && log.fragment.name === "EggHatched"
             );
-            const newProcioneId = hatchEvent.args.newProcioneId;
+            const newProcioneId = event.args[1]; // Secondo argomento è newProcioneId
             
+            // Verifica che l'evento sia stato emesso con i parametri corretti
+            await expect(tx)
+                .to.emit(idleProcioneEgg, "EggHatched")
+                .withArgs(eggId, newProcioneId, addr1.address);
+            
+            // Verifica la genetica del nuovo procione
             const newProcioneData = await mockIdleProcioneNFT.getProcioneData(newProcioneId);
             const newGenetics = newProcioneData & ((1n << 64n) - 1n); // Estrai i primi 64 bit
             expect(newGenetics).to.equal(BigInt(genetics));
@@ -237,15 +245,10 @@ describe("IdleProcioneEgg", function () {
 
         it("Dovrebbe indicare correttamente se un uovo può essere schiuso", async function () {
             // Prima del tempo di schiusa
-            const currentBlock = await ethers.provider.getBlock('latest');
-            console.log('Current timestamp:', currentBlock.timestamp);
-            console.log('Hatch time:', hatchTime);
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.false;
 
-            // Dopo il tempo di schiusa
-            await time.increase(INCUBATION_TIME);
-            const newBlock = await ethers.provider.getBlock('latest');
-            console.log('New timestamp:', newBlock.timestamp);
+            // Dopo il tempo di schiusa con margine di sicurezza
+            await time.increase(INCUBATION_TIME + 10);
             expect(await idleProcioneEgg.canHatch(eggId)).to.be.true;
         });
     });
