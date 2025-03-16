@@ -45,6 +45,10 @@ contract ProfessionsManager is
     address public medicManager;
     mapping(uint256 => uint256) private medicCooldowns; // tokenId => timestamp di fine cooldown
 
+    // Thief Specific Variables
+    address public thiefManager;
+    mapping(uint256 => uint256) private thiefAbilityCooldowns; // tokenId => timestamp di fine cooldown
+
     // Constants
     uint256 private constant MIN_LEVEL_FOR_PROFESSION = 5;
     uint256 private constant MIN_BREEDING_FOR_PROFESSION = 2;
@@ -75,6 +79,11 @@ contract ProfessionsManager is
     event MedicCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
     event MedicCooldownExpired(uint256 indexed tokenId);
 
+    // Thief Specific Events
+    event ThiefManagerUpdated(address indexed oldManager, address indexed newManager);
+    event ThiefAbilityCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
+    event ThiefAbilityCooldownExpired(uint256 indexed tokenId);
+
     // ========== Custom Errors ==========
     // General Errors
     error InvalidAddress();
@@ -102,6 +111,11 @@ contract ProfessionsManager is
     error NotMedic();
     error MedicOnCooldown();
 
+    // Thief Specific Errors
+    error NotThiefManager();
+    error NotThief();
+    error ThiefOnCooldown();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -123,6 +137,10 @@ contract ProfessionsManager is
         for(uint256 i = 1; i < 16; i++) {
             professionLimits[i] = 1000;
         }
+
+        // Imposta il livello massimo per il Thief a 20
+        professionMaxLevels[uint256(StatsLib.Professions.THIEF)] = 20;
+        emit ProfessionMaxLevelUpdated(StatsLib.Professions.THIEF, 20);
     }
 
     // ========== General Profession Functions ==========
@@ -493,6 +511,61 @@ contract ProfessionsManager is
         address oldManager = medicManager;
         medicManager = _newManager;
         emit MedicManagerUpdated(oldManager, _newManager);
+    }
+
+    // ========== Thief Specific Functions ==========
+
+    /// @notice Imposta l'indirizzo del ThiefManager
+    /// @param _newManager Il nuovo indirizzo del ThiefManager
+    function setThiefManager(address _newManager) external onlyOwner {
+        if (_newManager == address(0)) revert InvalidAddress();
+        address oldManager = thiefManager;
+        thiefManager = _newManager;
+        emit ThiefManagerUpdated(oldManager, _newManager);
+    }
+
+    /// @notice Attiva il cooldown per un ladro
+    /// @param tokenId L'ID del token del ladro
+    function activateThiefCooldown(uint256 tokenId) external {
+        if (msg.sender != thiefManager) revert NotThiefManager();
+        
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.THIEF) revert NotThief();
+        
+        uint256 cooldownDuration = getThiefCooldown(level);
+        uint256 cooldownEnd = block.timestamp + cooldownDuration;
+        thiefAbilityCooldowns[tokenId] = cooldownEnd;
+        
+        emit ThiefAbilityCooldownActivated(tokenId, cooldownEnd);
+    }
+
+    /// @notice Verifica se un ladro è in cooldown
+    /// @param tokenId L'ID del token del ladro
+    /// @return true se il ladro è in cooldown, false altrimenti
+    function isThiefOnCooldown(uint256 tokenId) public view returns (bool) {
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.THIEF) revert NotThief();
+        
+        uint256 cooldownEnd = thiefAbilityCooldowns[tokenId];
+        if (cooldownEnd == 0) return false;
+        
+        if (block.timestamp >= cooldownEnd) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// @notice Ottiene il cooldown in secondi per un ladro in base al suo livello
+    /// @param level Il livello del ladro
+    /// @return Il cooldown in secondi
+    function getThiefCooldown(uint256 level) public pure returns (uint256) {
+        if (level <= 4) return 24 * HOURS_TO_SECONDS;
+        if (level <= 9) return 20 * HOURS_TO_SECONDS;
+        if (level <= 14) return 16 * HOURS_TO_SECONDS;
+        if (level <= 19) return 12 * HOURS_TO_SECONDS;
+        if (level == 20) return 6 * HOURS_TO_SECONDS;
+        return 24 * HOURS_TO_SECONDS; // Default al cooldown massimo
     }
 
     // ========== Internal Functions ==========

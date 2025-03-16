@@ -9,7 +9,8 @@ library StatsLib {
     enum Professions {
         NONE,           // 0
         ARTISAN,        // 1
-        MEDIC           // 2
+        MEDIC,          // 2
+        THIEF           // 3
     }
 
     // ========== Constants ==========
@@ -27,8 +28,8 @@ library StatsLib {
     uint256 constant CLASS_MASK = 0xFF;        // 128-135
     uint256 constant FACTION_MASK = 0xFF;      // 136-143
     uint256 constant PROFESSION_MASK = 0xF;    // 144-147 (4 bit)
-    uint256 constant PROFESSIONLVL_MASK = 0xF; // 148-151 (4 bit)
-    uint256 constant PROFESSIONEXP_MASK = 0xFFFF; // 152-167 (16 bit)
+    uint256 constant PROFESSIONLVL_MASK = 0x1F; // 148-152 (5 bit)
+    uint256 constant PROFESSIONEXP_MASK = 0xFFFF; // 153-168 (16 bit)
 
     // Posizioni dei campi nel valore a 256 bit
     uint256 constant XP_POSITION = 0;
@@ -45,7 +46,7 @@ library StatsLib {
     uint256 constant FACTION_POSITION = 136;
     uint256 constant PROFESSION_POSITION = 144;
     uint256 constant PROFESSIONLVL_POSITION = 148;
-    uint256 constant PROFESSIONEXP_POSITION = 152;
+    uint256 constant PROFESSIONEXP_POSITION = 153;
 
     // Valori iniziali delle statistiche
     uint256 constant INITIAL_XP = 0;
@@ -209,7 +210,7 @@ library StatsLib {
     }
 
     function setProfessionLevel(uint256 stats, uint256 level) internal pure returns (uint256) {
-        require(level <= 15, "Profession level too high");
+        require(level <= 20, "Profession level too high");
         return updateField(stats, level, PROFESSIONLVL_MASK, PROFESSIONLVL_POSITION);
     }
 

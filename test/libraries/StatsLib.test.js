@@ -30,7 +30,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getClassMask()).to.equal(0xFF);        // 8 bit
       expect(await statsLibTest.getFactionMask()).to.equal(0xFF);      // 8 bit
       expect(await statsLibTest.getProfessionMask()).to.equal(0xF);    // 4 bit
-      expect(await statsLibTest.getProfessionLvlMask()).to.equal(0xF); // 4 bit
+      expect(await statsLibTest.getProfessionLvlMask()).to.equal(0x1F); // 5 bit
       expect(await statsLibTest.getProfessionExpMask()).to.equal(0xFFFF); // 16 bit
     });
 
@@ -49,7 +49,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getFactionPosition()).to.equal(136);
       expect(await statsLibTest.getProfessionPosition()).to.equal(144);
       expect(await statsLibTest.getProfessionLvlPosition()).to.equal(148);
-      expect(await statsLibTest.getProfessionExpPosition()).to.equal(152);
+      expect(await statsLibTest.getProfessionExpPosition()).to.equal(153);
     });
   });
 
@@ -299,7 +299,8 @@ describe("StatsLib", function() {
     });
 
     it("Non dovrebbe permettere livelli di professione superiori al massimo", async function() {
-      await expect(statsLibTest.setProfessionLevel(initialData, 16))
+      const invalidLevel = 21; // Il massimo è 20
+      await expect(statsLibTest.setProfessionLevel(initialData, invalidLevel))
         .to.be.revertedWith("Profession level too high");
     });
 

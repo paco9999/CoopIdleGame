@@ -99,6 +99,10 @@ describe("ProfessionsManager", function () {
         it("Dovrebbe impostare correttamente il professionBaseStep", async function () {
             expect(await professionsManager.professionBaseStep()).to.equal(100);
         });
+
+        it("Dovrebbe impostare il livello massimo del Thief a 20", async function () {
+            expect(await professionsManager.getProfessionMaxLevel(3)).to.equal(20); // 3 è l'enum value per THIEF
+        });
     });
 
     describe("Gestione Professioni", function () {
@@ -539,6 +543,204 @@ describe("ProfessionsManager", function () {
 
             it("Non dovrebbe permettere a non-owner di impostare il MedicManager", async function () {
                 await expect(professionsManager.connect(addr1).setMedicManager(addr2.address))
+                    .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                    .withArgs(addr1.address);
+            });
+        });
+    });
+
+    describe("Funzionalità Thief", function () {
+        let tokenId;
+        let thiefManagerSigner;
+
+        beforeEach(async function () {
+            // Setup per il mint e l'assegnazione della professione Thief
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId, newData);
+            await mockBreedingContract.setBreedCount(tokenId, 2);
+            await professionsManager.connect(addr1).assignProfession(tokenId, 3); // THIEF
+
+            // Setup del ThiefManager
+            const signers = await ethers.getSigners();
+            thiefManagerSigner = signers[3];
+            await professionsManager.setThiefManager(thiefManagerSigner.address);
+        });
+
+        describe("Gestione Cooldown Abilità", function () {
+            it("Dovrebbe calcolare correttamente il cooldown per ogni range di livello", async function () {
+                const cooldowns = {
+                    1: 24 * 3600,  // Livelli 1-4: 24 ore
+                    5: 20 * 3600,  // Livelli 5-9: 20 ore
+                    10: 16 * 3600, // Livelli 10-14: 16 ore
+                    15: 12 * 3600, // Livelli 15-19: 12 ore
+                    20: 6 * 3600   // Livello 20: 6 ore
+                };
+
+                // Test per ogni range di livelli
+                expect(await professionsManager.getThiefCooldown(1)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getThiefCooldown(4)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getThiefCooldown(5)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getThiefCooldown(9)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getThiefCooldown(10)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getThiefCooldown(14)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getThiefCooldown(15)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getThiefCooldown(19)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getThiefCooldown(20)).to.equal(cooldowns[20]);
+            });
+
+            it("Dovrebbe attivare il cooldown dell'abilità correttamente", async function () {
+                const tx = await professionsManager.connect(thiefManagerSigner).activateThiefCooldown(tokenId);
+                const receipt = await tx.wait();
+                
+                const cooldownEvent = receipt.logs.find(
+                    log => log.fragment && log.fragment.name === 'ThiefAbilityCooldownActivated'
+                );
+                expect(cooldownEvent).to.not.be.undefined;
+
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.true;
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown da non-ThiefManager", async function () {
+                await expect(professionsManager.connect(addr1).activateThiefCooldown(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "NotThiefManager");
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown per non-Thief", async function () {
+                // Creiamo un nuovo procione con professione Artisan
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                await professionsManager.connect(addr2).assignProfession(tokenId2, 1); // ARTISAN
+
+                await expect(professionsManager.connect(thiefManagerSigner).activateThiefCooldown(tokenId2))
+                    .to.be.revertedWithCustomError(professionsManager, "NotThief");
+            });
+
+            it("Dovrebbe gestire correttamente la scadenza del cooldown", async function () {
+                await professionsManager.connect(thiefManagerSigner).activateThiefCooldown(tokenId);
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 24 ore (cooldown per livello 1-4)
+                await time.increase(24 * 3600);
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe applicare il cooldown corretto in base al livello", async function () {
+                // Level up il thief al livello 5
+                // Calcoliamo l'EXP necessaria per ogni livello
+                const expNeeded = [400, 900, 1600, 2500];
+                
+                for (let i = 0; i < 4; i++) {
+                    await professionsManager.connect(addr1).addProfessionExp(tokenId, expNeeded[i]);
+                    await professionsManager.connect(addr1).professionLevelUp(tokenId);
+                    
+                    // Verifichiamo il livello dopo ogni level up
+                    const [, level,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                    expect(level).to.equal(i + 2); // i + 2 perché partiamo dal livello 1
+                }
+
+                await professionsManager.connect(thiefManagerSigner).activateThiefCooldown(tokenId);
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 19 ore (ancora in cooldown per livello 5 che è 20 ore)
+                await time.increase(19 * 3600);
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isThiefOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe supportare il level up fino al livello 20", async function () {
+                // Setup per il mint di un nuovo NFT dedicato per questo test
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.setPhaseStatus(1, true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const thiefTokenId = 1; // Nuovo token dedicato per questo test
+                
+                // Setup dei requisiti base per la professione
+                const data = await idleProcioneNFT.getProcioneData(thiefTokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(thiefTokenId, newData);
+                await mockBreedingContract.setBreedCount(thiefTokenId, 2);
+                
+                // Assegna la professione Thief
+                await professionsManager.connect(addr2).assignProfession(thiefTokenId, 3);
+                
+                // Verifica il livello massimo impostato per il Thief
+                const maxLevel = await professionsManager.getProfessionMaxLevel(3);
+                console.log(`Max level for Thief: ${maxLevel}`);
+                
+                // Loop di level up fino al livello 20
+                for (let currentLevel = 1; currentLevel < 20; currentLevel++) {
+                    const expNeeded = 100 * ((currentLevel + 1) ** 2);
+                    console.log(`Level ${currentLevel}: Adding ${expNeeded} exp`);
+                    
+                    await professionsManager.connect(addr2).addProfessionExp(thiefTokenId, expNeeded);
+                    const [profession, levelBefore, expBefore] = await idleProcioneNFT.getProfessionInfo(thiefTokenId);
+                    console.log(`Before level up: Profession ${profession}, Level ${levelBefore}, Exp ${expBefore}`);
+                    
+                    const isValid = await professionsManager.isValidProfessionLevel(3, currentLevel + 1);
+                    console.log(`Is level ${currentLevel + 1} valid? ${isValid}`);
+                    
+                    await professionsManager.connect(addr2).professionLevelUp(thiefTokenId);
+                    const [professionAfter, levelAfter, expAfter] = await idleProcioneNFT.getProfessionInfo(thiefTokenId);
+                    console.log(`After level up: Profession ${professionAfter}, Level ${levelAfter}, Exp ${expAfter}`);
+                    
+                    // Verifica del livello
+                    expect(levelAfter).to.equal(currentLevel + 1);
+                }
+
+                // Verifichiamo che il cooldown al livello 20 sia di 6 ore
+                await professionsManager.connect(thiefManagerSigner).activateThiefCooldown(thiefTokenId);
+                expect(await professionsManager.isThiefOnCooldown(thiefTokenId)).to.be.true;
+
+                // Avanziamo il tempo di 5 ore (ancora in cooldown)
+                await time.increase(5 * 3600);
+                expect(await professionsManager.isThiefOnCooldown(thiefTokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isThiefOnCooldown(thiefTokenId)).to.be.false;
+            });
+        });
+
+        describe("Gestione ThiefManager", function () {
+            it("Dovrebbe permettere all'owner di impostare il ThiefManager", async function () {
+                const newManager = addr2.address;
+                await expect(professionsManager.setThiefManager(newManager))
+                    .to.emit(professionsManager, "ThiefManagerUpdated")
+                    .withArgs(thiefManagerSigner.address, newManager);
+            });
+
+            it("Non dovrebbe permettere di impostare un ThiefManager con indirizzo zero", async function () {
+                await expect(professionsManager.setThiefManager(ethers.ZeroAddress))
+                    .to.be.revertedWithCustomError(professionsManager, "InvalidAddress");
+            });
+
+            it("Non dovrebbe permettere a non-owner di impostare il ThiefManager", async function () {
+                await expect(professionsManager.connect(addr1).setThiefManager(addr2.address))
                     .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
                     .withArgs(addr1.address);
             });

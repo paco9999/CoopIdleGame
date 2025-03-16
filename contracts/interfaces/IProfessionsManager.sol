@@ -36,4 +36,18 @@ interface IProfessionsManager {
     /// @param profession ID della professione
     /// @return array di ID dei token con quella professione
     function getProfessionMembers(uint256 profession) external view returns (uint256[] memory);
+
+    /// @notice Attiva il cooldown dell'abilità speciale per un ladro
+    /// @param tokenId ID del ladro per cui attivare il cooldown
+    function activateThiefCooldown(uint256 tokenId) external;
+
+    /// @notice Verifica se l'abilità speciale di un ladro è in cooldown
+    /// @param tokenId ID del ladro da verificare
+    /// @return true se l'abilità del ladro è in cooldown, false altrimenti
+    function isThiefOnCooldown(uint256 tokenId) external view returns (bool);
+
+    /// @notice Ottiene il cooldown dell'abilità speciale per un ladro in base al suo livello
+    /// @param level Il livello del ladro
+    /// @return Il cooldown in secondi
+    function getThiefCooldown(uint256 level) external pure returns (uint256);
 } 
