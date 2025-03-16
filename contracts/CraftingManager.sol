@@ -295,6 +295,24 @@ contract CraftingManager is
         return userCraftingJobs[user];
     }
 
+    /// @notice Verifica se una ricetta esiste ed è attiva
+    /// @param recipeId ID della ricetta da verificare
+    /// @return bool True se la ricetta esiste ed è attiva
+    function isRecipeValid(uint256 recipeId) external view returns (bool) {
+        if (recipeId == 0 || recipeId > recipeCount) return false;
+        return recipes[recipeId].active;
+    }
+
+    /// @notice Verifica se un array di ricette sono tutte valide
+    /// @param recipeIds Array di ID delle ricette da verificare
+    /// @return bool True se tutte le ricette esistono e sono attive
+    function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool) {
+        for (uint256 i = 0; i < recipeIds.length; i++) {
+            if (!this.isRecipeValid(recipeIds[i])) return false;
+        }
+        return true;
+    }
+
     // ========== Internal Functions ==========
 
     /// @dev Verifica se un utente ha i materiali necessari

@@ -454,4 +454,200 @@ describe("CraftingManager", function () {
             expect(balance).to.equal(1n);
         });
     });
+
+    describe("Funzionalità di Pausa", function () {
+        beforeEach(async function () {
+            // Setup ricetta di test
+            await craftingManager.addRecipe(
+                [0, 1],
+                [1, 2],
+                RECIPE_FEE,
+                "ipfs://QmExample",
+                CRAFTING_TIME,
+                REQUIRED_ARTISAN_LEVEL
+            );
+
+            // Setup approvazioni
+            await materialsNFT.connect(user).setApprovalForAll(await craftingManager.getAddress(), true);
+            await comToken.connect(user).approve(await craftingManager.getAddress(), RECIPE_FEE);
+
+            // Rimuovi tutti i materiali dell'utente
+            const balance0 = await materialsNFT.balanceOfType(user.address, 0);
+            const balance1 = await materialsNFT.balanceOfType(user.address, 1);
+            // Approva l'operatore per il burn
+            await materialsNFT.connect(user).setApprovalForAll(owner.address, true);
+            if (balance0 > 0) await materialsNFT.burn(user.address, 0, balance0);
+            if (balance1 > 0) await materialsNFT.burn(user.address, 1, balance1);
+        });
+
+        it("Dovrebbe permettere di mettere in pausa e riprendere il contratto", async function () {
+            await craftingManager.pause();
+            await expect(craftingManager.connect(user).craft(1))
+                .to.be.revertedWithCustomError(craftingManager, "EnforcedPause");
+
+            await craftingManager.unpause();
+            await expect(craftingManager.connect(user).craft(1))
+                .to.be.revertedWithCustomError(craftingManager, "InsufficientMaterials");
+        });
+
+        it("Solo l'owner può mettere in pausa/riprendere", async function () {
+            await expect(craftingManager.connect(user).pause())
+                .to.be.revertedWithCustomError(craftingManager, "OwnableUnauthorizedAccount")
+                .withArgs(user.address);
+            await expect(craftingManager.connect(user).unpause())
+                .to.be.revertedWithCustomError(craftingManager, "OwnableUnauthorizedAccount")
+                .withArgs(user.address);
+        });
+    });
+
+    describe("Verifica Ricette", function () {
+        it("Dovrebbe verificare correttamente la validità delle ricette", async function () {
+            // Aggiungi una ricetta
+            await craftingManager.addRecipe(
+                [0, 1],
+                [1, 2],
+                RECIPE_FEE,
+                "ipfs://QmExample",
+                CRAFTING_TIME,
+                REQUIRED_ARTISAN_LEVEL
+            );
+
+            // Verifica singola ricetta
+            expect(await craftingManager.isRecipeValid(1)).to.be.true;
+            expect(await craftingManager.isRecipeValid(999)).to.be.false;
+
+            // Verifica multiple ricette
+            expect(await craftingManager.areRecipesValid([1])).to.be.true;
+            expect(await craftingManager.areRecipesValid([1, 999])).to.be.false;
+        });
+
+        it("Dovrebbe gestire correttamente la disattivazione delle ricette", async function () {
+            await craftingManager.addRecipe(
+                [0, 1],
+                [1, 2],
+                RECIPE_FEE,
+                "ipfs://QmExample",
+                CRAFTING_TIME,
+                REQUIRED_ARTISAN_LEVEL
+            );
+
+            await craftingManager.deactivateRecipe(1);
+            expect(await craftingManager.isRecipeValid(1)).to.be.false;
+
+            await expect(craftingManager.connect(user).craft(1))
+                .to.be.revertedWithCustomError(craftingManager, "RecipeNotActive");
+        });
+    });
+
+    describe("Aggiornamento Indirizzi Contratti", function () {
+        it("Dovrebbe permettere l'aggiornamento degli indirizzi dei contratti", async function () {
+            const MockERC20 = await ethers.getContractFactory("contracts/mocks/MockERC20.sol:MockERC20");
+            const newComToken = await MockERC20.deploy("New COM", "NCOM");
+            const newCraftedItemNFT = await ethers.deployContract("MockCraftedItemNFT");
+            const newProfessionsManager = await ethers.deployContract("MockProfessionsManager");
+            const newTreasury = await ethers.Wallet.createRandom();
+            const newMaterialsNFT = await ethers.deployContract("MockMaterialsNFT");
+
+            await craftingManager.setComToken(await newComToken.getAddress());
+            await craftingManager.setCraftedItemNFT(await newCraftedItemNFT.getAddress());
+            await craftingManager.setProfessionsManager(await newProfessionsManager.getAddress());
+            await craftingManager.setTreasury(newTreasury.address);
+            await craftingManager.setMaterialsNFT(await newMaterialsNFT.getAddress());
+
+            expect(await craftingManager.comToken()).to.equal(await newComToken.getAddress());
+            expect(await craftingManager.craftedItemNFT()).to.equal(await newCraftedItemNFT.getAddress());
+            expect(await craftingManager.professionsManager()).to.equal(await newProfessionsManager.getAddress());
+            expect(await craftingManager.treasury()).to.equal(newTreasury.address);
+            expect(await craftingManager.materialsNFT()).to.equal(await newMaterialsNFT.getAddress());
+        });
+
+        it("Non dovrebbe permettere l'impostazione di indirizzi nulli", async function () {
+            await expect(craftingManager.setComToken(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(craftingManager, "InvalidAddress");
+            await expect(craftingManager.setCraftedItemNFT(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(craftingManager, "InvalidAddress");
+            await expect(craftingManager.setProfessionsManager(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(craftingManager, "InvalidAddress");
+            await expect(craftingManager.setTreasury(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(craftingManager, "InvalidAddress");
+            await expect(craftingManager.setMaterialsNFT(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(craftingManager, "InvalidAddress");
+        });
+    });
+
+    describe("Eventi", function () {
+        it("Dovrebbe emettere gli eventi corretti durante il crafting", async function () {
+            // Rimuovi tutti i materiali dell'utente
+            const balance0 = await materialsNFT.balanceOfType(user.address, 0);
+            const balance1 = await materialsNFT.balanceOfType(user.address, 1);
+            // Approva l'operatore per il burn
+            await materialsNFT.connect(user).setApprovalForAll(owner.address, true);
+            if (balance0 > 0) await materialsNFT.burn(user.address, 0, balance0);
+            if (balance1 > 0) await materialsNFT.burn(user.address, 1, balance1);
+
+            await craftingManager.addRecipe(
+                [0, 1],
+                [1, 2],
+                RECIPE_FEE,
+                "ipfs://QmExample",
+                CRAFTING_TIME,
+                REQUIRED_ARTISAN_LEVEL
+            );
+
+            await materialsNFT.connect(user).setApprovalForAll(await craftingManager.getAddress(), true);
+            await comToken.connect(user).approve(await craftingManager.getAddress(), RECIPE_FEE);
+
+            // Mint dei materiali necessari
+            await materialsNFT.mint(user.address, 0);
+            await materialsNFT.mint(user.address, 1);
+            await materialsNFT.mint(user.address, 1);
+
+            // Ottieni il timestamp del blocco prima della transazione
+            const latestBlock = await ethers.provider.getBlock("latest");
+            const expectedEndTime = BigInt(latestBlock.timestamp) + CRAFTING_TIME;
+
+            const tx = await craftingManager.connect(user).craft(1);
+            const receipt = await tx.wait();
+
+            // Trova l'evento CraftingStarted
+            const craftingStartedEvent = receipt.logs.find(
+                log => log.fragment && log.fragment.name === "CraftingStarted"
+            );
+            expect(craftingStartedEvent.args.user).to.equal(user.address);
+            expect(craftingStartedEvent.args.recipeId).to.equal(1n);
+            expect(craftingStartedEvent.args.artisan).to.equal(artisan.address);
+            // Verifica che l'endTime sia approssimativamente corretto (±2 secondi)
+            expect(craftingStartedEvent.args.endTime).to.be.closeTo(expectedEndTime, 2n);
+
+            // Avanza il tempo
+            await ethers.provider.send("evm_increaseTime", [Number(CRAFTING_TIME) + 1]);
+            await ethers.provider.send("evm_mine");
+
+            await expect(craftingManager.connect(user).completeCrafting(0))
+                .to.emit(craftingManager, "CraftingCompleted")
+                .withArgs(user.address, 1n, artisan.address, 0n); // Il primo NFT mintato avrà ID 0
+        });
+
+        it("Dovrebbe emettere gli eventi corretti per la gestione delle ricette", async function () {
+            const recipeId = await craftingManager.recipeCount() + 1n;
+            
+            await expect(craftingManager.addRecipe(
+                [0, 1],
+                [1, 2],
+                RECIPE_FEE,
+                "ipfs://QmExample",
+                CRAFTING_TIME,
+                REQUIRED_ARTISAN_LEVEL
+            )).to.emit(craftingManager, "RecipeAdded")
+              .withArgs(recipeId, "ipfs://QmExample");
+
+            await expect(craftingManager.updateRecipeParameters(recipeId, RECIPE_FEE * 2n, CRAFTING_TIME * 2n, REQUIRED_ARTISAN_LEVEL + 1))
+                .to.emit(craftingManager, "RecipeUpdated")
+                .withArgs(recipeId);
+
+            await expect(craftingManager.deactivateRecipe(recipeId))
+                .to.emit(craftingManager, "RecipeDeactivated")
+                .withArgs(recipeId);
+        });
+    });
 }); 
