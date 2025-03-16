@@ -6,12 +6,13 @@ interface IProfessionsManager {
         address owner;
         uint256 level;
         uint256 availableCraftingSlots;
+        uint256 tokenId;
     }
 
     /// @notice Blocca uno slot di crafting per un artigiano
-    /// @param artisanIndex Indice dell'artigiano
+    /// @param tokenId ID dell'artigiano
     /// @param duration Durata del blocco
-    function lockCraftingSlot(uint256 artisanIndex, uint256 duration) external;
+    function lockCraftingSlot(uint256 tokenId, uint256 duration) external;
 
     /// @notice Ottiene tutti gli artigiani
     /// @return Array di informazioni sugli artigiani

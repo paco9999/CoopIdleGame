@@ -355,21 +355,32 @@ describe("IdleProcioneNFT", function () {
             const contractAddress = await authorizedContract.getAddress();
             await idleProcioneNFT.setHealthModifierAuthorization(contractAddress, true);
             
-            // Get initial data
+            // Get initial data and max health
             const initialData = await idleProcioneNFT.getProcioneData(tokenId);
             const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+            const maxHealth = await statsLibTest.extractField(
+                initialData, 
+                await statsLibTest.getHealthMask(), 
+                await statsLibTest.getHealthPosition()
+            );
             
             // Add health
-            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 10, true);
+            const healthToAdd = 10n;
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, healthToAdd, true);
             let newData = await idleProcioneNFT.getProcioneData(tokenId);
             let newHealth = await statsLibTest.getCurrentHealth(newData);
-            expect(newHealth).to.equal(initialHealth + BigInt(10));
+            const expectedAddHealth = initialHealth + healthToAdd > maxHealth ? maxHealth : initialHealth + healthToAdd;
+            expect(newHealth).to.equal(expectedAddHealth);
             
             // Subtract health
-            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 5, false);
+            const healthToSubtract = 5n;
+            await authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, healthToSubtract, false);
             newData = await idleProcioneNFT.getProcioneData(tokenId);
             newHealth = await statsLibTest.getCurrentHealth(newData);
-            expect(newHealth).to.equal(initialHealth + BigInt(5));
+            const expectedHealth = expectedAddHealth > healthToSubtract ? 
+                expectedAddHealth - healthToSubtract : 
+                0n;
+            expect(newHealth).to.equal(expectedHealth);
         });
 
         it("Should emit correct events when modifying health", async function() {
@@ -378,10 +389,20 @@ describe("IdleProcioneNFT", function () {
             
             const initialData = await idleProcioneNFT.getProcioneData(tokenId);
             const initialHealth = await statsLibTest.getCurrentHealth(initialData);
+            const maxHealth = await statsLibTest.extractField(
+                initialData, 
+                await statsLibTest.getHealthMask(), 
+                await statsLibTest.getHealthPosition()
+            );
             
-            await expect(authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, 10, true))
+            const healthToAdd = 10n;
+            const expectedHealth = initialHealth + healthToAdd > maxHealth ? 
+                maxHealth : 
+                initialHealth + healthToAdd;
+            
+            await expect(authorizedContract.modifyHealth(idleProcioneNFT.target, tokenId, healthToAdd, true))
                 .to.emit(idleProcioneNFT, "CurrentHealthModified")
-                .withArgs(tokenId, initialHealth, initialHealth + BigInt(10))
+                .withArgs(tokenId, initialHealth, expectedHealth)
                 .and.to.emit(idleProcioneNFT, "DataUpdated");
         });
 

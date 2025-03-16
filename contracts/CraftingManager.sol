@@ -326,7 +326,7 @@ contract CraftingManager is
         
         for (uint256 i = 0; i < artisans.length; i++) {
             if (artisans[i].level >= requiredLevel && artisans[i].availableCraftingSlots > 0) {
-                return (artisans[i].owner, i);
+                return (artisans[i].owner, artisans[i].tokenId);
             }
         }
         

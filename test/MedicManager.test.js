@@ -29,27 +29,27 @@ describe("MedicManager", function () {
         // Setup initial state
         console.log("\n💰 Setting up initial state...");
         console.log("   Minting COM tokens to users...");
-        await mockCOM.mint(user1.address, ethers.parseEther("1000"));
-        await mockCOM.mint(user2.address, ethers.parseEther("1000"));
-        await mockCOM.mint(user3.address, ethers.parseEther("1000"));
+        await mockCOM.mint(user1.address, ethers.parseEther("1000")); // user1 sarà il pagatore
+        await mockCOM.mint(user2.address, ethers.parseEther("1000")); // user2 sarà il proprietario del primo medico
+        await mockCOM.mint(user3.address, ethers.parseEther("1000")); // user3 sarà il proprietario del secondo medico
 
         // Mint NFTs con salute bassa
         console.log("   Minting NFTs with low health...");
-        await mockNFT.safeMint(user1.address); // tokenId 0
-        await mockNFT.safeMint(user2.address); // tokenId 1
-        await mockNFT.safeMint(user3.address); // tokenId 2
+        await mockNFT.safeMint(user1.address); // tokenId 0 - NFT da curare
+        await mockNFT.safeMint(user1.address); // tokenId 1 - NFT da curare
+        await mockNFT.safeMint(user1.address); // tokenId 2 - NFT da curare
 
         console.log("   Setting initial health values...");
         await mockNFT.setHealth(0, 20);
         await mockNFT.setHealth(1, 30);
         await mockNFT.setHealth(2, 40);
 
-        // Mint Medic NFTs
-        console.log("   Minting and assigning Medic NFTs...");
-        await mockNFT.safeMint(user1.address); // tokenId 3 (Medic)
-        await mockNFT.safeMint(user2.address); // tokenId 4 (Medic)
-        await mockProfManager.assignProfession(3, 1);
-        await mockProfManager.assignProfession(4, 1);
+        // Mint Medic NFTs a utenti diversi
+        console.log("   Minting and assigning Medic NFTs to different users...");
+        await mockNFT.safeMint(user2.address); // tokenId 3 (Medic) - assegnato a user2
+        await mockNFT.safeMint(user3.address); // tokenId 4 (Medic) - assegnato a user3
+        await mockProfManager.assignProfession(3, 2); // Assegna professione medico (valore 2)
+        await mockProfManager.assignProfession(4, 2); // Assegna professione medico (valore 2)
 
         // Deploy MedicManager
         console.log("\n🚀 Deploying MedicManager...");
@@ -93,6 +93,125 @@ describe("MedicManager", function () {
 
     describe("Funzioni di Cura", function () {
         describe("heal", function () {
+            it("Dovrebbe trasferire correttamente i COM token al medico e alla tesoreria", async function () {
+                console.log("\n💰 Testing COM token transfers in heal function...");
+                const { medicManager, mockCOM, mockNFT, user1, treasury } = await loadFixture(deployContractsFixture);
+
+                // Imposta salute bassa per l'NFT
+                console.log("   Setting low health for NFT 0...");
+                await mockNFT.setHealth(0, 20);
+
+                // Trova il medico disponibile e il suo owner
+                console.log("   Finding available medic...");
+                const medicId = await medicManager.getAvailableMedic();
+                const medicOwner = await mockNFT.ownerOf(medicId);
+                console.log(`   Medic ID: ${medicId}, Owner: ${medicOwner}`);
+
+                // Verifica saldi iniziali
+                console.log("   Checking initial balances...");
+                const initialUser1Balance = await mockCOM.balanceOf(user1.address);
+                const initialMedicOwnerBalance = await mockCOM.balanceOf(medicOwner);
+                const initialTreasuryBalance = await mockCOM.balanceOf(treasury.address);
+                console.log(`   Initial balances:
+                    User1 (payer): ${ethers.formatEther(initialUser1Balance)} COM
+                    Medic Owner: ${ethers.formatEther(initialMedicOwnerBalance)} COM
+                    Treasury: ${ethers.formatEther(initialTreasuryBalance)} COM`);
+
+                // Approva COM tokens
+                const healingFee = await medicManager.healingFee();
+                console.log(`   Approving ${ethers.formatEther(healingFee)} COM tokens...`);
+                const approveTx = await mockCOM.connect(user1).approve(await medicManager.getAddress(), healingFee);
+                console.log("   Waiting for approval transaction...");
+                await approveTx.wait();
+                console.log("   Approval transaction confirmed");
+
+                // Esegui cura
+                console.log("   Executing heal...");
+                const healTx = await medicManager.connect(user1).heal(0);
+                console.log("   Waiting for heal transaction...");
+                const receipt = await healTx.wait();
+                console.log("   Heal transaction confirmed");
+
+                // Analizza gli eventi emessi
+                console.log("\n   Analyzing emitted events...");
+                for (const log of receipt.logs) {
+                    if (log.fragment) {
+                        console.log(`   Event: ${log.fragment.name}`);
+                        console.log("   Arguments:", Object.fromEntries(Object.entries(log.args)));
+                    }
+                }
+
+                // Verifica che il trasferimento sia stato effettivamente completato
+                console.log("\n   Verifying transfer completion...");
+                const transferEvents = receipt.logs.filter(
+                    log => log.fragment && log.fragment.name === "Transfer"
+                );
+                console.log(`   Found ${transferEvents.length} Transfer events`);
+                for (const event of transferEvents) {
+                    console.log(`   Transfer: From ${event.args.from} To ${event.args.to} Amount ${ethers.formatEther(event.args.value)} COM`);
+                }
+
+                // Attendi un po' per assicurarsi che la blockchain sia aggiornata
+                console.log("\n   Waiting for blockchain to update...");
+                await ethers.provider.send("evm_mine", []);
+                
+                // Verifica saldi finali
+                console.log("\n   Checking final balances...");
+                const finalUser1Balance = await mockCOM.balanceOf(user1.address);
+                const finalMedicOwnerBalance = await mockCOM.balanceOf(medicOwner);
+                const finalTreasuryBalance = await mockCOM.balanceOf(treasury.address);
+
+                // Log dettagliato delle variazioni
+                console.log("\n   Detailed balance changes:");
+                console.log(`   User1 (${user1.address}):
+                    Initial: ${ethers.formatEther(initialUser1Balance)} COM
+                    Final: ${ethers.formatEther(finalUser1Balance)} COM
+                    Delta: ${ethers.formatEther(finalUser1Balance - initialUser1Balance)} COM`);
+                
+                console.log(`   Medic Owner (${medicOwner}):
+                    Initial: ${ethers.formatEther(initialMedicOwnerBalance)} COM
+                    Final: ${ethers.formatEther(finalMedicOwnerBalance)} COM
+                    Delta: ${ethers.formatEther(finalMedicOwnerBalance - initialMedicOwnerBalance)} COM`);
+                
+                console.log(`   Treasury (${treasury.address}):
+                    Initial: ${ethers.formatEther(initialTreasuryBalance)} COM
+                    Final: ${ethers.formatEther(finalTreasuryBalance)} COM
+                    Delta: ${ethers.formatEther(finalTreasuryBalance - initialTreasuryBalance)} COM`);
+
+                // Calcola fee attese
+                const medicFeePercentage = await medicManager.medicFeePercentage();
+                const expectedMedicFee = (healingFee * BigInt(medicFeePercentage)) / 100n;
+                const expectedTreasuryFee = healingFee - expectedMedicFee;
+
+                console.log("\n   Expected vs Actual:");
+                console.log(`   Total Fee: ${ethers.formatEther(healingFee)} COM
+                    Medic Fee (${medicFeePercentage}%): ${ethers.formatEther(expectedMedicFee)} COM
+                    Treasury Fee: ${ethers.formatEther(expectedTreasuryFee)} COM`);
+
+                // Verifica trasferimenti
+                console.log("\n   Verifying token transfers...");
+                console.log(`   User1 (payer) balance change:
+                    Initial: ${ethers.formatEther(initialUser1Balance)} COM
+                    Final: ${ethers.formatEther(finalUser1Balance)} COM
+                    Expected change: -${ethers.formatEther(healingFee)} COM
+                    Actual change: -${ethers.formatEther(initialUser1Balance - finalUser1Balance)} COM`);
+                expect(finalUser1Balance).to.equal(initialUser1Balance - healingFee, "User1 balance incorrect");
+
+                console.log(`   Medic owner (${medicOwner}) balance change:
+                    Initial: ${ethers.formatEther(initialMedicOwnerBalance)} COM
+                    Final: ${ethers.formatEther(finalMedicOwnerBalance)} COM
+                    Expected change: +${ethers.formatEther(expectedMedicFee)} COM
+                    Actual change: +${ethers.formatEther(finalMedicOwnerBalance - initialMedicOwnerBalance)} COM`);
+                expect(finalMedicOwnerBalance).to.equal(initialMedicOwnerBalance + expectedMedicFee, "Medic owner balance incorrect");
+
+                console.log(`   Treasury balance change:
+                    Initial: ${ethers.formatEther(initialTreasuryBalance)} COM
+                    Final: ${ethers.formatEther(finalTreasuryBalance)} COM
+                    Expected change: +${ethers.formatEther(expectedTreasuryFee)} COM
+                    Actual change: +${ethers.formatEther(finalTreasuryBalance - initialTreasuryBalance)} COM`);
+                expect(finalTreasuryBalance).to.equal(initialTreasuryBalance + expectedTreasuryFee, "Treasury balance incorrect");
+            });
+
             it("Dovrebbe curare un NFT con successo", async function () {
                 console.log("\n🏥 Testing healing function...");
                 const { medicManager, mockCOM, mockNFT, user1 } = await loadFixture(deployContractsFixture);
@@ -160,6 +279,116 @@ describe("MedicManager", function () {
         });
 
         describe("healBatch", function () {
+            it("Dovrebbe trasferire correttamente i COM token per cure multiple", async function () {
+                console.log("\n💰 Testing COM token transfers in healBatch function...");
+                const { medicManager, mockCOM, mockNFT, mockProfManager, user1, treasury } = await loadFixture(deployContractsFixture);
+
+                // Imposta salute bassa per gli NFT
+                console.log("   Setting low health for NFTs...");
+                await mockNFT.setHealth(0, 20);
+                await mockNFT.setHealth(1, 30);
+
+                // Esegui healBatch per trovare i medici che verranno usati
+                console.log("   Finding medics to be used...");
+                const tokenIds = [0, 1];
+                const medicIds = [];
+                for (let i = 0; i < tokenIds.length; i++) {
+                    const medicId = await medicManager.getAvailableMedic();
+                    medicIds.push(medicId);
+                    // Simula l'attivazione del cooldown per trovare il prossimo medico
+                    await mockProfManager.activateCooldown(medicId);
+                }
+                // Resetta i cooldown
+                for (const medicId of medicIds) {
+                    await mockProfManager.deactivateCooldown(medicId);
+                }
+
+                // Trova gli owner dei medici
+                const medicOwners = await Promise.all(medicIds.map(id => mockNFT.ownerOf(id)));
+                console.log(`   Medic IDs: ${medicIds.join(", ")}`);
+                console.log(`   Medic Owners: ${medicOwners.join(", ")}`);
+
+                // Verifica saldi iniziali
+                console.log("   Checking initial balances...");
+                const initialUser1Balance = await mockCOM.balanceOf(user1.address);
+                const initialMedicOwnerBalances = await Promise.all(medicOwners.map(owner => mockCOM.balanceOf(owner)));
+                const initialTreasuryBalance = await mockCOM.balanceOf(treasury.address);
+                console.log(`   Initial balances:
+                    User1 (payer): ${ethers.formatEther(initialUser1Balance)} COM
+                    Medic1 Owner: ${ethers.formatEther(initialMedicOwnerBalances[0])} COM
+                    Medic2 Owner: ${ethers.formatEther(initialMedicOwnerBalances[1])} COM
+                    Treasury: ${ethers.formatEther(initialTreasuryBalance)} COM`);
+
+                // Calcola fee totale e approva
+                const healingFee = await medicManager.healingFee();
+                const totalFee = healingFee * 2n;
+                console.log(`   Approving ${ethers.formatEther(totalFee)} COM tokens...`);
+                const approveTx = await mockCOM.connect(user1).approve(await medicManager.getAddress(), totalFee);
+                console.log("   Waiting for approval transaction...");
+                await approveTx.wait();
+                console.log("   Approval transaction confirmed");
+
+                // Esegui cura batch
+                console.log("   Executing healBatch...");
+                const healBatchTx = await medicManager.connect(user1).healBatch(tokenIds);
+                console.log("   Waiting for healBatch transaction...");
+                const receipt = await healBatchTx.wait();
+                console.log("   HealBatch transaction confirmed");
+
+                // Attendi un po' per assicurarsi che la blockchain sia aggiornata
+                console.log("   Waiting for blockchain to update...");
+                await ethers.provider.send("evm_mine", []);
+
+                // Verifica saldi finali
+                console.log("   Checking final balances...");
+                const finalUser1Balance = await mockCOM.balanceOf(user1.address);
+                const finalMedicOwnerBalances = await Promise.all(medicOwners.map(owner => mockCOM.balanceOf(owner)));
+                const finalTreasuryBalance = await mockCOM.balanceOf(treasury.address);
+                console.log(`   Final balances:
+                    User1 (payer): ${ethers.formatEther(finalUser1Balance)} COM
+                    Medic1 Owner: ${ethers.formatEther(finalMedicOwnerBalances[0])} COM
+                    Medic2 Owner: ${ethers.formatEther(finalMedicOwnerBalances[1])} COM
+                    Treasury: ${ethers.formatEther(finalTreasuryBalance)} COM`);
+
+                // Calcola fee attese
+                const medicFeePercentage = await medicManager.medicFeePercentage();
+                const expectedMedicFee = (healingFee * BigInt(medicFeePercentage)) / 100n;
+                const expectedTreasuryFee = (healingFee - expectedMedicFee) * 2n;
+
+                console.log(`   Expected fees:
+                    Total fee: ${ethers.formatEther(totalFee)} COM
+                    Medic fee each (${medicFeePercentage}%): ${ethers.formatEther(expectedMedicFee)} COM
+                    Treasury fee total: ${ethers.formatEther(expectedTreasuryFee)} COM`);
+
+                // Verifica trasferimenti
+                console.log("\n   Verifying token transfers...");
+                console.log(`   User1 (payer) balance change:
+                    Initial: ${ethers.formatEther(initialUser1Balance)} COM
+                    Final: ${ethers.formatEther(finalUser1Balance)} COM
+                    Expected change: -${ethers.formatEther(totalFee)} COM
+                    Actual change: -${ethers.formatEther(initialUser1Balance - finalUser1Balance)} COM`);
+                expect(finalUser1Balance).to.equal(initialUser1Balance - totalFee, "User1 balance incorrect");
+
+                for (let i = 0; i < medicOwners.length; i++) {
+                    console.log(`   Medic${i + 1} owner (${medicOwners[i]}) balance change:
+                        Initial: ${ethers.formatEther(initialMedicOwnerBalances[i])} COM
+                        Final: ${ethers.formatEther(finalMedicOwnerBalances[i])} COM
+                        Expected change: +${ethers.formatEther(expectedMedicFee)} COM
+                        Actual change: +${ethers.formatEther(finalMedicOwnerBalances[i] - initialMedicOwnerBalances[i])} COM`);
+                    expect(finalMedicOwnerBalances[i]).to.equal(
+                        initialMedicOwnerBalances[i] + expectedMedicFee,
+                        `Medic${i + 1} owner balance incorrect`
+                    );
+                }
+
+                console.log(`   Treasury balance change:
+                    Initial: ${ethers.formatEther(initialTreasuryBalance)} COM
+                    Final: ${ethers.formatEther(finalTreasuryBalance)} COM
+                    Expected change: +${ethers.formatEther(expectedTreasuryFee)} COM
+                    Actual change: +${ethers.formatEther(finalTreasuryBalance - initialTreasuryBalance)} COM`);
+                expect(finalTreasuryBalance).to.equal(initialTreasuryBalance + expectedTreasuryFee, "Treasury balance incorrect");
+            });
+
             it("Dovrebbe curare multipli NFT con successo", async function () {
                 const { medicManager, mockCOM, mockNFT, user1 } = await loadFixture(deployContractsFixture);
 

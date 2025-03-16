@@ -145,43 +145,52 @@ contract MedicManager is
     function healBatch(uint256[] calldata tokenIds) external whenNotPaused {
         if (tokenIds.length == 0) revert EmptyBatch();
 
-        uint256[] memory medicIds = new uint256[](tokenIds.length);
-        uint256[] memory healAmounts = new uint256[](tokenIds.length);
-        uint256 totalFee = 0;
-
-        // Verifica salute e trova medici disponibili
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            // Verifica salute dell'NFT
-            uint256 data = nftContract.getProcioneData(tokenIds[i]);
-            uint256 maxHealth = StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
-            uint256 currentHealth = StatsLib.getCurrentHealth(data);
-
-            if (currentHealth >= maxHealth) {
-                revert NFTAlreadyAtFullHealth();
-            }
-
-            medicIds[i] = getAvailableMedic();
-            if (medicIds[i] == 0) revert InsufficientMedics();
-
-            healAmounts[i] = maxHealth - currentHealth;
-            totalFee += healingFee;
-        }
-
-        // Verifica allowance
+        // Calcola fee totale e verifica allowance
+        uint256 totalFee = healingFee * tokenIds.length;
         if (comToken.allowance(msg.sender, address(this)) < totalFee) {
             revert InsufficientCOMAllowance();
         }
 
+        // Ottieni tutti i medici e verifica disponibilità
+        uint256[] memory allMedics = professionsManager.getMembersByProfession(2); // 2 = MEDIC
+        uint256 availableMedicsCount = 0;
+        for (uint256 i = 0; i < allMedics.length && availableMedicsCount < tokenIds.length; i++) {
+            if (!professionsManager.isOnCooldown(allMedics[i])) {
+                availableMedicsCount++;
+            }
+        }
+        if (availableMedicsCount < tokenIds.length) revert InsufficientMedics();
+
+        uint256[] memory medicIds = new uint256[](tokenIds.length);
+        uint256 nextMedicIndex = 0;
+
         // Processa ogni NFT
         for (uint256 i = 0; i < tokenIds.length; i++) {
+            // Trova il prossimo medico disponibile
+            while (nextMedicIndex < allMedics.length) {
+                if (!professionsManager.isOnCooldown(allMedics[nextMedicIndex])) {
+                    medicIds[i] = allMedics[nextMedicIndex];
+                    nextMedicIndex++;
+                    break;
+                }
+                nextMedicIndex++;
+            }
+            if (medicIds[i] == 0) revert InsufficientMedics();
+
+            // Verifica salute e cura l'NFT
+            uint256 data = nftContract.getProcioneData(tokenIds[i]);
+            uint256 currentHealth = StatsLib.getCurrentHealth(data);
+            uint256 maxHealth = StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+            if (currentHealth >= maxHealth) revert NFTAlreadyAtFullHealth();
+
+            // Calcola e trasferisci le fee
             uint256 medicFee = (healingFee * medicFeePercentage) / PERCENTAGE_BASE;
-            uint256 treasuryFee = healingFee - medicFee;
-
             comToken.transferFrom(msg.sender, nftContract.ownerOf(medicIds[i]), medicFee);
-            comToken.transferFrom(msg.sender, treasury, treasuryFee);
+            comToken.transferFrom(msg.sender, treasury, healingFee - medicFee);
 
+            // Attiva cooldown e cura
             professionsManager.activateCooldown(medicIds[i]);
-            nftContract.modifyCurrentHealth(tokenIds[i], healAmounts[i], true);
+            nftContract.modifyCurrentHealth(tokenIds[i], maxHealth - currentHealth, true);
 
             emit NFTHealed(tokenIds[i], medicIds[i], healingFee);
         }
@@ -194,7 +203,7 @@ contract MedicManager is
     /// @notice Trova un medico disponibile per curare
     /// @return tokenId ID del primo medico disponibile, 0 se nessuno è disponibile
     function getAvailableMedic() public view returns (uint256) {
-        uint256[] memory medics = professionsManager.getMembersByProfession(1); // 1 = MEDIC
+        uint256[] memory medics = professionsManager.getMembersByProfession(2); // 2 = MEDIC
         
         for (uint256 i = 0; i < medics.length; i++) {
             if (!professionsManager.isOnCooldown(medics[i])) {
