@@ -30,6 +30,7 @@ library StatsLib {
     uint256 constant PROFESSION_MASK = 0xF;    // 144-147 (4 bit)
     uint256 constant PROFESSIONLVL_MASK = 0x1F; // 148-152 (5 bit)
     uint256 constant PROFESSIONEXP_MASK = 0xFFFF; // 153-168 (16 bit)
+    uint256 constant DUNGEON_STATUS_MASK = 0x1; // 169 (1 bit)
 
     // Posizioni dei campi nel valore a 256 bit
     uint256 constant XP_POSITION = 0;
@@ -47,6 +48,7 @@ library StatsLib {
     uint256 constant PROFESSION_POSITION = 144;
     uint256 constant PROFESSIONLVL_POSITION = 148;
     uint256 constant PROFESSIONEXP_POSITION = 153;
+    uint256 constant DUNGEON_STATUS_POSITION = 169;
 
     // Valori iniziali delle statistiche
     uint256 constant INITIAL_XP = 0;
@@ -78,6 +80,7 @@ library StatsLib {
         data = updateField(data, INITIAL_STATS, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
         data = updateField(data, INITIAL_STATS, ACCURACY_MASK, ACCURACY_POSITION);
         data = updateField(data, INITIAL_BREEDING, BREEDING_MASK, BREEDING_POSITION);
+        data = updateField(data, 0, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION); // Inizializza DUNGEON_STATUS a 0
         
         return data;
     }
@@ -177,18 +180,38 @@ library StatsLib {
         return extractField(stats, GENETICS_MASK, GENETICS_POSITION);
     }
 
+    /// @notice Ottiene lo stato del dungeon del procione
+    /// @param stats I dati dell'NFT
+    /// @return Lo stato del dungeon (0 = non in dungeon, 1 = in dungeon)
+    function getDungeonStatus(uint256 stats) internal pure returns (uint256) {
+        return extractField(stats, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION);
+    }
+
+    /// @notice Imposta lo stato del dungeon del procione
+    /// @param stats I dati dell'NFT
+    /// @param status Il nuovo stato (0 = non in dungeon, 1 = in dungeon)
+    /// @return I dati aggiornati
+    function setDungeonStatus(uint256 stats, uint256 status) internal pure returns (uint256) {
+        require(status <= 1, "Invalid dungeon status");
+        return updateField(stats, status, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION);
+    }
+
+    /// @notice Ottiene tutte le statistiche incluso lo stato del dungeon
+    /// @param stats I dati dell'NFT
     function getAllStats(uint256 stats) internal pure returns (
         uint256 xp,
         uint256 level,
         uint256 breedingSlots,
         uint256 breedingCount,
-        uint256 rarity
+        uint256 rarity,
+        uint256 dungeonStatus
     ) {
         xp = getXP(stats);
         level = getLevel(stats);
         breedingSlots = getBreedingSlots(stats);
         breedingCount = getBreedingCount(stats);
         rarity = getRarity(stats);
+        dungeonStatus = getDungeonStatus(stats);
     }
 
     // Funzioni per le professioni

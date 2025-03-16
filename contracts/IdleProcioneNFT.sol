@@ -62,6 +62,7 @@ contract IdleProcioneNFT is
     address public levelUpContract;
     address public eggContract;
     address public professionsContract;
+    address public dungeonManager;
     uint256 public professionBaseStep;
 
     // Chainlink VRF
@@ -94,11 +95,14 @@ contract IdleProcioneNFT is
     error ProfessionAlreadySet();
     error InsufficientExp();
     error NotTokenOwner();
+    error UnauthorizedDungeonManager();
 
     // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
     event LevelUpContractUpdated(address indexed oldContract, address indexed newContract);
     event ProfessionsContractUpdated(address indexed oldContract, address indexed newContract);
+    event DungeonManagerUpdated(address indexed oldContract, address indexed newContract);
+    event DungeonStatusChanged(uint256 indexed tokenId, bool status);
     event HealthModifierAuthorized(address indexed modifierAddress, bool authorized);
     event CurrentHealthModified(uint256 indexed tokenId, uint256 oldHealth, uint256 newHealth);
     event ProfessionBaseStepUpdated(uint256 oldValue, uint256 newValue);
@@ -493,6 +497,53 @@ contract IdleProcioneNFT is
         _procioneData[tokenId] = newData;
 
         emit CurrentHealthModified(tokenId, oldHealth, StatsLib.getCurrentHealth(newData));
+        emit DataUpdated(tokenId, newData);
+    }
+
+    // ========== Dungeon Functions ==========
+    
+    /// @notice Imposta l'indirizzo del contratto DungeonManager
+    /// @param _newAddress Il nuovo indirizzo del DungeonManager
+    function setDungeonManager(address _newAddress) external onlyOwner {
+        if (_newAddress == address(0)) revert InvalidAddress();
+        
+        // Revoca l'autorizzazione dal vecchio DungeonManager
+        if (dungeonManager != address(0)) {
+            authorizedHealthModifiers[dungeonManager] = false;
+            emit HealthModifierAuthorized(dungeonManager, false);
+        }
+        
+        address oldContract = dungeonManager;
+        dungeonManager = _newAddress;
+        
+        // Autorizza il nuovo DungeonManager a modificare la salute
+        authorizedHealthModifiers[_newAddress] = true;
+        
+        emit DungeonManagerUpdated(oldContract, _newAddress);
+        emit HealthModifierAuthorized(_newAddress, true);
+    }
+
+    /// @notice Ottiene lo stato del dungeon di un procione
+    /// @param tokenId L'ID del procione
+    /// @return bool True se il procione è in dungeon, False altrimenti
+    function getDungeonStatus(uint256 tokenId) external view returns (bool) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        return StatsLib.getDungeonStatus(_procioneData[tokenId]) == 1;
+    }
+
+    /// @notice Imposta lo stato del dungeon di un procione
+    /// @param tokenId L'ID del procione
+    /// @param status Il nuovo stato (true = in dungeon, false = non in dungeon)
+    function setDungeonStatus(uint256 tokenId, bool status) external {
+        if (msg.sender != dungeonManager) revert UnauthorizedDungeonManager();
+        if (!_exists(tokenId)) revert TokenNotExists();
+
+        uint256 data = _procioneData[tokenId];
+        uint256 newStatus = status ? 1 : 0;
+        uint256 newData = StatsLib.setDungeonStatus(data, newStatus);
+        _procioneData[tokenId] = newData;
+
+        emit DungeonStatusChanged(tokenId, status);
         emit DataUpdated(tokenId, newData);
     }
 

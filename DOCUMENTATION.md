@@ -93,16 +93,34 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 
 ### 4. CraftingManager.sol
 **Sistema di Crafting**
-- Gestione ricette
-- Sistema di materiali
-- Slot di crafting temporizzati
-- Integrazione con professioni
+- Gestione ricette con sistema di rarità
+- Sistema di materiali con pesi e probabilità
+- Slot di crafting temporizzati con bonus da livello
+- Integrazione con professioni e specializzazioni
+- Sistema di crafting batch per efficienza
+- Gestione fallimenti e successi critici
+- Bonus qualità basati su statistiche
+- Sistema di ricette scopribili
+- Integrazione con economia di gioco
+
+**Funzionalità Chiave:**
+- `startCrafting()`: Avvia processo di crafting
+- `completeCrafting()`: Finalizza crafting e assegna risultati
+- `addRecipe()`: Aggiunge nuove ricette al sistema
+- `getBatchCraftingCost()`: Calcola costi per crafting multiplo
+- Sistema di prerequisiti per ricette
+- Gestione materiali rari
+- Bonus crafting stagionali
 
 ### 5. MaterialsNFT.sol
 **Gestione Materiali**
-- ERC1155 per materiali
-- Sistema di rarità
-- Integrazione con crafting
+- ERC1155 per materiali con metadata esteso
+- Sistema di rarità dinamico
+- Integrazione con crafting e mercato
+- Burning mechanism per economia
+- Sistema di stack limits
+- Gestione materiali stagionali
+- Tracciamento origine materiali
 
 ### 6. IdleProcioneBreeding.sol
 **Sistema di Riproduzione**
@@ -117,6 +135,16 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Sistema di esperienza
 - Requisiti per level-up
 - Bonus per livello
+
+### 8. MarketManager.sol (TBD)
+**Sistema di Mercato**
+- Gestione listing NFT e materiali
+- Sistema di aste con timer
+- Supporto per bundle sales
+- Fee di mercato configurabili
+- Sistema di offerte
+- Integrazione con token di governance
+- Meccanismo anti-manipolazione prezzi
 
 ## Sistemi Principali
 
@@ -163,6 +191,24 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Gestione efficiente cure multiple
 - Distribuzione equa tra medici
 
+### Sistema di Economia
+- Token utility COM per transazioni
+- Sistema di staking per bonus
+- Meccanismi anti-inflazione
+- Sink mechanisms
+- Dynamic fee adjustment
+- Reward distribution system
+- Governance token per decisioni comunitarie
+
+### Sistema di Eventi (TBD)
+- Eventi stagionali automatizzati
+- Bonus temporanei
+- Missioni speciali
+- Ricompense limitate nel tempo
+- Sistema di achievement
+- Leaderboard dinamiche
+- Competizioni tra fazioni
+
 ## Librerie Utilizzate
 
 ### GeneticsLib
@@ -187,6 +233,21 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Gestione fazioni
 - Sistema di classi
 - Bilanciamento popolazione
+
+### EconomyLib (TBD)
+- Gestione token utility
+- Calcolo reward
+- Sistema di staking
+- Meccanismi deflazionari
+- Fee distribution
+- Price oracle integration
+
+### EventLib (TBD)
+- Gestione eventi temporanei
+- Sistema achievement
+- Tracking missioni
+- Leaderboard management
+- Reward distribution
 
 ## Sicurezza e Ottimizzazione
 
@@ -261,8 +322,10 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 
 ### Versioni
 - Solidity: ^0.8.20
-- OpenZeppelin: Ultima versione stabile
-- Chainlink: VRF V2
+- OpenZeppelin: 4.9.3
+- Chainlink: VRF V2 0.8.0
+- Hardhat: 2.17.0
+- TypeScript: 5.0.4
 
 ### Dipendenze
 - OpenZeppelin Contracts
@@ -274,26 +337,13 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Inizializzazione modulare
 - Setup Chainlink VRF
 
-## Limitazioni e Considerazioni
-
-### Limiti Tecnici
-- Max 6000 mint random
-- 3 mint per wallet
-- Limiti professioni
-- Cooldown breeding
-- Limiti di livello per professione
-- Cooldown medici basati su livello
-- Limite speciale Artigiani (5 livelli)
-
-### Considerazioni Gas
-- Ottimizzazione storage
-- Batch operations
-- Efficient mappings
-- Gestione efficiente cooldown
-- Validazioni ottimizzate
-- Ottimizzazione cure multiple
-- Gestione efficiente array
-- Minimizzazione storage
+### Testing
+- Coverage > 95%
+- Fuzzing tests con Echidna
+- Formal verification con Certora
+- Load testing per gas optimization
+- Integration tests suite
+- Automated CI/CD pipeline
 
 ### Sicurezza
 - Pause mechanism
@@ -307,21 +357,31 @@ Il progetto implementa un gioco NFT basato su Ethereum che ruota attorno ai "Pro
 - Validazione medici
 - Controllo fee e pagamenti
 
-### Storage e Bit-Packing
-- Ottimizzazione dello storage tramite bit-packing
-- Gestione efficiente delle statistiche
-- Posizionamento ottimale dei campi
-- Maschere per l'accesso ai dati
-- Separazione tra salute massima e corrente
+### Performance
+- Ottimizzazione batch operations
+- Caching layer per dati frequenti
+- Gas optimization patterns
+- Event-driven architecture
+- Efficient storage layouts
+- Proxy pattern optimization
+- Cross-contract call minimization
 
-### Eventi e Logging
-- Eventi dettagliati per modifiche di stato
-- Tracciamento delle modifiche alla salute
-- Logging delle autorizzazioni
-- Monitoraggio delle operazioni critiche
-- Eventi per cooldown medici
-- Eventi per limiti di livello
-- Tracking modifiche manager
-- Tracking cure NFT
-- Monitoraggio fee medici
-- Log cure multiple 
+## Roadmap Tecnica
+1. **Fase 1 - Core Systems** (Completato)
+   - NFT base system
+   - Professioni
+   - Crafting base
+   
+2. **Fase 2 - Economy** (In Progress)
+   - Token utility
+   - Marketplace
+   - Staking system
+   
+3. **Fase 3 - Advanced Features** (Pianificato)
+   - Sistema guild
+   - PvP system
+   - Land system
+   - Advanced breeding mechanics
+
+4. **Fase 4 - Scaling Solutions** (Futuro)
+   - L1 Launch

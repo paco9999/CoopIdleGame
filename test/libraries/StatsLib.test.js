@@ -32,6 +32,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getProfessionMask()).to.equal(0xF);    // 4 bit
       expect(await statsLibTest.getProfessionLvlMask()).to.equal(0x1F); // 5 bit
       expect(await statsLibTest.getProfessionExpMask()).to.equal(0xFFFF); // 16 bit
+      expect(await statsLibTest.getDungeonStatusMask()).to.equal(0x1); // 1 bit
     });
 
     it("Dovrebbe avere le posizioni corrette", async function() {
@@ -50,6 +51,7 @@ describe("StatsLib", function() {
       expect(await statsLibTest.getProfessionPosition()).to.equal(144);
       expect(await statsLibTest.getProfessionLvlPosition()).to.equal(148);
       expect(await statsLibTest.getProfessionExpPosition()).to.equal(153);
+      expect(await statsLibTest.getDungeonStatusPosition()).to.equal(169);
     });
   });
 
@@ -265,6 +267,61 @@ describe("StatsLib", function() {
         
         expect(newHealth).to.equal(maxHealth);
       });
+    });
+
+    it("Dovrebbe impostare e ottenere lo stato del dungeon correttamente", async function() {
+      const initialData = await statsLibTest.createInitialData();
+      
+      // Verifica stato iniziale (dovrebbe essere 0)
+      const initialStatus = await statsLibTest.getDungeonStatus(initialData);
+      expect(initialStatus).to.equal(0);
+      
+      // Imposta a 1
+      const updatedData = await statsLibTest.setDungeonStatus(initialData, 1);
+      const newStatus = await statsLibTest.getDungeonStatus(updatedData);
+      expect(newStatus).to.equal(1);
+      
+      // Imposta a 0
+      const resetData = await statsLibTest.setDungeonStatus(updatedData, 0);
+      const resetStatus = await statsLibTest.getDungeonStatus(resetData);
+      expect(resetStatus).to.equal(0);
+    });
+
+    it("Non dovrebbe permettere valori di dungeon status superiori a 1", async function() {
+      const initialData = await statsLibTest.createInitialData();
+      
+      await expect(
+        statsLibTest.setDungeonStatus(initialData, 2)
+      ).to.be.revertedWith("Invalid dungeon status");
+    });
+
+    it("Dovrebbe mantenere lo stato del dungeon quando si modificano altre statistiche", async function() {
+      const initialData = await statsLibTest.createInitialData();
+      
+      // Imposta dungeon status a 1
+      const withDungeon = await statsLibTest.setDungeonStatus(initialData, 1);
+      
+      // Modifica altre statistiche
+      const withLevel = await statsLibTest.setLevel(withDungeon, 5);
+      const withXP = await statsLibTest.setXP(withLevel, 1000);
+      const withHealth = await statsLibTest.setCurrentHealth(withXP, 50);
+      
+      // Verifica che dungeon status sia ancora 1
+      const finalStatus = await statsLibTest.getDungeonStatus(withHealth);
+      expect(finalStatus).to.equal(1);
+    });
+
+    it("Dovrebbe includere dungeon status in getAllStats", async function() {
+      const initialData = await statsLibTest.createInitialData();
+      
+      // Imposta dungeon status a 1
+      const updatedData = await statsLibTest.setDungeonStatus(initialData, 1);
+      
+      // Ottieni tutte le statistiche
+      const stats = await statsLibTest.getAllStats(updatedData);
+      
+      // Verifica che dungeonStatus sia l'ultimo valore restituito
+      expect(stats.dungeonStatus).to.equal(1);
     });
   });
 

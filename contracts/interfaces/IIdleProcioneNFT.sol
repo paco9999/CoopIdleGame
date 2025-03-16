@@ -119,4 +119,22 @@ interface IIdleProcioneNFT {
 
     /// @notice Riattiva il contratto
     function unpause() external;
+
+    /// @notice Imposta l'indirizzo del contratto DungeonManager
+    /// @param _newAddress Il nuovo indirizzo del DungeonManager
+    function setDungeonManager(address _newAddress) external;
+
+    /// @notice Ottiene lo stato del dungeon di un procione
+    /// @param tokenId L'ID del procione
+    /// @return bool True se il procione è in dungeon, False altrimenti
+    function getDungeonStatus(uint256 tokenId) external view returns (bool);
+
+    /// @notice Imposta lo stato del dungeon di un procione
+    /// @param tokenId L'ID del procione
+    /// @param status Il nuovo stato (true = in dungeon, false = non in dungeon)
+    function setDungeonStatus(uint256 tokenId, bool status) external;
+
+    /// @notice Restituisce l'indirizzo del DungeonManager corrente
+    /// @return address L'indirizzo del DungeonManager
+    function dungeonManager() external view returns (address);
 } 

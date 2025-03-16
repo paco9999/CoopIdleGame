@@ -69,6 +69,10 @@ contract StatsLibTest {
         return StatsLib.PROFESSIONEXP_MASK;
     }
 
+    function getDungeonStatusMask() public pure returns (uint256) {
+        return StatsLib.DUNGEON_STATUS_MASK;
+    }
+
     // Funzioni per ottenere le posizioni
     function getXPPosition() public pure returns (uint256) {
         return StatsLib.XP_POSITION;
@@ -128,6 +132,10 @@ contract StatsLibTest {
 
     function getProfessionExpPosition() public pure returns (uint256) {
         return StatsLib.PROFESSIONEXP_POSITION;
+    }
+
+    function getDungeonStatusPosition() public pure returns (uint256) {
+        return StatsLib.DUNGEON_STATUS_POSITION;
     }
 
     // Funzioni per ottenere i valori massimi
@@ -217,5 +225,24 @@ contract StatsLibTest {
 
     function modifyCurrentHealth(uint256 data, uint256 delta, bool isAddition) public pure returns (uint256) {
         return StatsLib.modifyCurrentHealth(data, delta, isAddition);
+    }
+
+    function getDungeonStatus(uint256 data) public pure returns (uint256) {
+        return StatsLib.getDungeonStatus(data);
+    }
+
+    function setDungeonStatus(uint256 data, uint256 status) public pure returns (uint256) {
+        return StatsLib.setDungeonStatus(data, status);
+    }
+
+    function getAllStats(uint256 data) public pure returns (
+        uint256 xp,
+        uint256 level,
+        uint256 breedingSlots,
+        uint256 breedingCount,
+        uint256 rarity,
+        uint256 dungeonStatus
+    ) {
+        return StatsLib.getAllStats(data);
     }
 } 

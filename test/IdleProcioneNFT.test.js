@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers, upgrades } = require("hardhat");
+const { ethers, upgrades, network } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 const { parseEther } = ethers;
@@ -435,6 +435,162 @@ describe("IdleProcioneNFT", function () {
             const newData = await idleProcioneNFT.getProcioneData(tokenId);
             const newHealth = await statsLibTest.getCurrentHealth(newData);
             expect(newHealth).to.equal(0);
+        });
+    });
+
+    describe("Dungeon Management", function() {
+        let tokenId;
+        let mockDungeonManager;
+
+        beforeEach(async function() {
+            // Deploy un mock DungeonManager
+            const MockDungeonManager = await ethers.getContractFactory("MockDungeonManager");
+            mockDungeonManager = await MockDungeonManager.deploy();
+            await mockDungeonManager.waitForDeployment();
+
+            // Mint un NFT per i test
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            tokenId = 0;
+        });
+
+        it("Should allow owner to set DungeonManager", async function() {
+            const dungeonManagerAddress = await mockDungeonManager.getAddress();
+            await expect(idleProcioneNFT.setDungeonManager(dungeonManagerAddress))
+                .to.emit(idleProcioneNFT, "DungeonManagerUpdated")
+                .withArgs(ethers.ZeroAddress, dungeonManagerAddress)
+                .and.to.emit(idleProcioneNFT, "HealthModifierAuthorized")
+                .withArgs(dungeonManagerAddress, true);
+
+            expect(await idleProcioneNFT.dungeonManager()).to.equal(dungeonManagerAddress);
+            expect(await idleProcioneNFT.authorizedHealthModifiers(dungeonManagerAddress)).to.be.true;
+        });
+
+        it("Should revoke authorization from old DungeonManager when setting new one", async function() {
+            // Set first DungeonManager
+            const firstDungeonManager = await mockDungeonManager.getAddress();
+            await idleProcioneNFT.setDungeonManager(firstDungeonManager);
+
+            // Deploy and set second DungeonManager
+            const MockDungeonManager2 = await ethers.getContractFactory("MockDungeonManager");
+            const secondDungeonManager = await MockDungeonManager2.deploy();
+            const secondAddress = await secondDungeonManager.getAddress();
+
+            await expect(idleProcioneNFT.setDungeonManager(secondAddress))
+                .to.emit(idleProcioneNFT, "DungeonManagerUpdated")
+                .withArgs(firstDungeonManager, secondAddress)
+                .and.to.emit(idleProcioneNFT, "HealthModifierAuthorized")
+                .withArgs(firstDungeonManager, false)
+                .and.to.emit(idleProcioneNFT, "HealthModifierAuthorized")
+                .withArgs(secondAddress, true);
+
+            expect(await idleProcioneNFT.authorizedHealthModifiers(firstDungeonManager)).to.be.false;
+            expect(await idleProcioneNFT.authorizedHealthModifiers(secondAddress)).to.be.true;
+        });
+
+        it("Should prevent non-owner from setting DungeonManager", async function() {
+            const dungeonManagerAddress = await mockDungeonManager.getAddress();
+            await expect(idleProcioneNFT.connect(addr1).setDungeonManager(dungeonManagerAddress))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "OwnableUnauthorizedAccount")
+                .withArgs(addr1.address);
+        });
+
+        it("Should prevent setting zero address as DungeonManager", async function() {
+            await expect(idleProcioneNFT.setDungeonManager(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "InvalidAddress");
+        });
+
+        it("Should allow DungeonManager to set dungeon status", async function() {
+            const dungeonManagerAddress = await mockDungeonManager.getAddress();
+            await idleProcioneNFT.setDungeonManager(dungeonManagerAddress);
+
+            // Impersoniamo il DungeonManager usando l'owner
+            await network.provider.request({
+                method: "hardhat_impersonateAccount",
+                params: [dungeonManagerAddress],
+            });
+            const dungeonManagerSigner = await ethers.getSigner(dungeonManagerAddress);
+
+            // Finanziamo il DungeonManager con ETH per il gas
+            await owner.sendTransaction({
+                to: dungeonManagerAddress,
+                value: ethers.parseEther("10.0")
+            });
+
+            // Set status to true (in dungeon)
+            await expect(idleProcioneNFT.connect(dungeonManagerSigner).setDungeonStatus(tokenId, true))
+                .to.emit(idleProcioneNFT, "DungeonStatusChanged")
+                .withArgs(tokenId, true)
+                .and.to.emit(idleProcioneNFT, "DataUpdated");
+
+            expect(await idleProcioneNFT.getDungeonStatus(tokenId)).to.be.true;
+
+            // Set status back to false (not in dungeon)
+            await expect(idleProcioneNFT.connect(dungeonManagerSigner).setDungeonStatus(tokenId, false))
+                .to.emit(idleProcioneNFT, "DungeonStatusChanged")
+                .withArgs(tokenId, false)
+                .and.to.emit(idleProcioneNFT, "DataUpdated");
+
+            expect(await idleProcioneNFT.getDungeonStatus(tokenId)).to.be.false;
+
+            await network.provider.request({
+                method: "hardhat_stopImpersonatingAccount",
+                params: [dungeonManagerAddress],
+            });
+        });
+
+        it("Should prevent unauthorized addresses from setting dungeon status", async function() {
+            await expect(idleProcioneNFT.connect(addr1).setDungeonStatus(tokenId, true))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedDungeonManager");
+        });
+
+        it("Should prevent setting dungeon status for non-existent tokens", async function() {
+            const dungeonManagerAddress = await mockDungeonManager.getAddress();
+            await idleProcioneNFT.setDungeonManager(dungeonManagerAddress);
+
+            // Impersoniamo il DungeonManager usando l'owner
+            await network.provider.request({
+                method: "hardhat_impersonateAccount",
+                params: [dungeonManagerAddress],
+            });
+            const dungeonManagerSigner = await ethers.getSigner(dungeonManagerAddress);
+
+            // Finanziamo il DungeonManager con ETH per il gas
+            await owner.sendTransaction({
+                to: dungeonManagerAddress,
+                value: ethers.parseEther("10.0")
+            });
+
+            await expect(idleProcioneNFT.connect(dungeonManagerSigner).setDungeonStatus(999, true))
+                .to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+
+            await network.provider.request({
+                method: "hardhat_stopImpersonatingAccount",
+                params: [dungeonManagerAddress],
+            });
+        });
+
+        it("Should allow DungeonManager to modify health", async function() {
+            const dungeonManagerAddress = await mockDungeonManager.getAddress();
+            await idleProcioneNFT.setDungeonManager(dungeonManagerAddress);
+
+            // Get initial health
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            const initialHealth = await statsLibTest.getCurrentHealth(data);
+
+            // Modify health
+            const healthToSubtract = 10n;
+            await expect(mockDungeonManager.modifyHealth(idleProcioneNFT.target, tokenId, healthToSubtract, false))
+                .to.emit(idleProcioneNFT, "CurrentHealthModified")
+                .and.to.emit(idleProcioneNFT, "DataUpdated");
+
+            const newData = await idleProcioneNFT.getProcioneData(tokenId);
+            const newHealth = await statsLibTest.getCurrentHealth(newData);
+            expect(newHealth).to.equal(initialHealth > healthToSubtract ? initialHealth - healthToSubtract : 0n);
         });
     });
 }); 
