@@ -2,9 +2,26 @@
 pragma solidity ^0.8.20;
 
 contract MockCraftingManager {
+    mapping(uint256 => bool) private validRecipes;
     mapping(uint256 => uint256) private lockedSlots;
     mapping(uint256 => mapping(uint256 => uint256)) private slotUnlockTimes;
 
+    // Funzione richiesta da ICraftingManager per DungeonManager
+    function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool) {
+        for (uint256 i = 0; i < recipeIds.length; i++) {
+            if (!validRecipes[recipeIds[i]]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Funzione di supporto per i test
+    function setRecipeValidity(uint256 recipeId, bool isValid) external {
+        validRecipes[recipeId] = isValid;
+    }
+
+    // Funzioni per la gestione degli slot di crafting
     function lockCraftingSlot(uint256 tokenId, uint256 duration) external {
         lockedSlots[tokenId]++;
         slotUnlockTimes[tokenId][lockedSlots[tokenId] - 1] = block.timestamp + duration;

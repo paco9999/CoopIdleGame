@@ -24,7 +24,7 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     }
 
     // Mapping dall'ID del dungeon al tipo di dungeon
-    mapping(uint256 => DungeonType) public dungeons;
+    mapping(uint256 => DungeonType) internal dungeons;
     
 
     // Indirizzo del contratto CraftingManager
@@ -67,11 +67,6 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Aggiorna l'indirizzo del contratto CraftedItemNFT
-     * @param _newAddress Nuovo indirizzo del contratto
-     */
-
-    /**
      * @dev Aggiorna l'indirizzo del contratto CraftingManager
      * @param _newAddress Nuovo indirizzo del contratto
      */
@@ -102,14 +97,24 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         
         // Verifica che gli ID corrispondano a ricette valide
         _verifyRecipeIds(_itemsRequired);
+
+        // Crea una nuova DungeonType
+        DungeonType storage dungeon = dungeons[_dungeonId];
         
-        dungeons[_dungeonId] = DungeonType({
-            itemsRequired: _itemsRequired,
-            dungeonStats: _dungeonStats,
-            timeDuration: _timeDuration,
-            numberOfItemsRequired: _numberOfItemsRequired,
-            initialized: true
-        });
+        // Copia gli oggetti richiesti
+        delete dungeon.itemsRequired; // Pulisce l'array esistente
+        for (uint256 i = 0; i < _itemsRequired.length; i++) {
+            dungeon.itemsRequired.push(_itemsRequired[i]);
+        }
+
+        // Copia le statistiche del dungeon
+        for (uint256 i = 0; i < 4; i++) {
+            dungeon.dungeonStats[i] = _dungeonStats[i];
+        }
+
+        dungeon.timeDuration = _timeDuration;
+        dungeon.numberOfItemsRequired = _numberOfItemsRequired;
+        dungeon.initialized = true;
 
         emit DungeonInitialized(_dungeonId, _itemsRequired, _dungeonStats, _timeDuration, _numberOfItemsRequired);
     }
@@ -140,13 +145,44 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Ottiene tutte le informazioni di un dungeon
+     * @param _dungeonId ID del dungeon
+     * @return initialized Se il dungeon è stato inizializzato
+     * @return itemsRequired Array di ID degli oggetti richiesti
+     * @return dungeonStats Array delle statistiche del dungeon
+     * @return timeDuration Durata in secondi del dungeon
+     * @return numberOfItemsRequired Numero di oggetti richiesti
+     */
+    function getDungeon(uint256 _dungeonId) external view returns (
+        bool initialized,
+        uint256[] memory itemsRequired,
+        uint256[4] memory dungeonStats,
+        uint256 timeDuration,
+        uint256 numberOfItemsRequired
+    ) {
+        DungeonType storage dungeon = dungeons[_dungeonId];
+        return (
+            dungeon.initialized,
+            dungeon.itemsRequired,
+            dungeon.dungeonStats,
+            dungeon.timeDuration,
+            dungeon.numberOfItemsRequired
+        );
+    }
+
+    /**
      * @dev Aggiorna le statistiche di un dungeon esistente
      * @param _dungeonId ID del dungeon
      * @param _newStats Nuove statistiche del dungeon
      */
     function updateDungeonStats(uint256 _dungeonId, uint256[4] calldata _newStats) external onlyOwner {
         require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
-        dungeons[_dungeonId].dungeonStats = _newStats;
+        
+        // Copia le nuove statistiche
+        for (uint256 i = 0; i < 4; i++) {
+            dungeons[_dungeonId].dungeonStats[i] = _newStats[i];
+        }
+
         emit DungeonStatsUpdated(_dungeonId, _newStats);
     }
 
@@ -167,8 +203,13 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         
         // Verifica che gli ID corrispondano a ricette valide
         _verifyRecipeIds(_newItems);
-        
-        dungeons[_dungeonId].itemsRequired = _newItems;
+
+        // Copia i nuovi oggetti richiesti
+        delete dungeons[_dungeonId].itemsRequired; // Pulisce l'array esistente
+        for (uint256 i = 0; i < _newItems.length; i++) {
+            dungeons[_dungeonId].itemsRequired.push(_newItems[i]);
+        }
+
         dungeons[_dungeonId].numberOfItemsRequired = _newNumberOfItemsRequired;
         
         emit DungeonItemsUpdated(_dungeonId, _newItems, _newNumberOfItemsRequired);

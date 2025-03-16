@@ -15,6 +15,7 @@ describe("ProfessionsManager", function () {
     let mockBreedingContract;
     let mockCraftingManager;
     let mockVRFCoordinator;
+    let mockCraftedItemNFT;
 
     async function deployFixture() {
         const [_owner, _addr1, _addr2] = await ethers.getSigners();
@@ -67,8 +68,11 @@ describe("ProfessionsManager", function () {
         const MockBreedingContract = await ethers.getContractFactory("MockBreedingContract");
         mockBreedingContract = await MockBreedingContract.deploy();
 
-        // Deploy mock crafting manager
-        const MockCraftingManager = await ethers.getContractFactory("MockCraftingManager");
+        const MockCraftedItemNFT = await ethers.getContractFactory("MockCraftedItemNFT");
+        mockCraftedItemNFT = await MockCraftedItemNFT.deploy();
+
+        // Deploy del mock CraftingManager
+        const MockCraftingManager = await ethers.getContractFactory("contracts/mocks/MockCraftingManager.sol:MockCraftingManager");
         mockCraftingManager = await MockCraftingManager.deploy();
 
         // Assegna i valori alle variabili globali
