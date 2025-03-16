@@ -4,6 +4,10 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/**
+ * @title IIdleProcioneNFT
+ * @dev Interfaccia per interagire con il contratto IdleProcioneNFT
+ */
 interface IIdleProcioneNFT {
     function ownerOf(uint256 tokenId) external view returns (address);
     function getProcioneData(uint256 tokenId) external view returns (uint256);
@@ -11,10 +15,18 @@ interface IIdleProcioneNFT {
     function getCurrentHealth(uint256 tokenId) external view returns (uint256);
 }
 
+/**
+ * @title ICraftingManager
+ * @dev Interfaccia per interagire con il contratto CraftingManager
+ */
 interface ICraftingManager {
     function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool);
 }
 
+/**
+ * @title IPVPManager
+ * @dev Interfaccia per interagire con il contratto PVPManager
+ */
 interface IPVPManager {
     // Interfaccia vuota per type safety
 }
@@ -24,6 +36,8 @@ interface IPVPManager {
  * @dev Gestisce la creazione e la configurazione dei dungeon
  */
 contract DungeonManager is Ownable, ReentrancyGuard {
+    // ============ Structs ============
+
     struct DungeonType {
         uint256[] itemsRequired;
         uint256[4] dungeonStats; // [Duration, Depth, TrapDensity, EnemyStrength]
@@ -46,22 +60,21 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         bool PVP_STATUS;
     }
 
+    // ============ Storage ============
+
     // Mapping dall'ID del dungeon al tipo di dungeon
     mapping(uint256 => DungeonType) internal dungeons;
     
     // Mapping per tenere traccia dei party attivi nei dungeon
     mapping(uint256 => DungeonParty[]) public dungeonParties;
 
-    // Indirizzo del contratto CraftingManager
+    // Contratti esterni
     ICraftingManager public craftingManager;
-    
-    // Indirizzo del contratto IdleProcioneNFT
     IIdleProcioneNFT public idleProcioneNFT;
-
-    // Indirizzo del contratto PVPManager
     IPVPManager public pvpManager;
 
-    // Eventi
+    // ============ Events ============
+
     event DungeonInitialized(
         uint256 indexed dungeonId, 
         uint256[] itemsRequired, 
@@ -85,7 +98,8 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         uint256 endTime
     );
 
-    // Custom Errors
+    // ============ Errors ============
+
     error InvalidRecipeIds();
     error InvalidNFTOwner();
     error InvalidHealth();
@@ -95,6 +109,8 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     error UnauthorizedPVPManager();
     error InvalidPartyIndex();
     error InvalidPVPManager();
+
+    // ============ Constructor ============
 
     /**
      * @dev Costruttore che imposta gli indirizzi dei contratti necessari
@@ -110,11 +126,14 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         require(_craftingManager != address(0), "Indirizzo CraftingManager non valido");
         require(_idleProcioneNFT != address(0), "Indirizzo IdleProcioneNFT non valido");
         require(_pvpManager != address(0), "Indirizzo PVPManager non valido");
+        
         craftingManager = ICraftingManager(_craftingManager);
         idleProcioneNFT = IIdleProcioneNFT(_idleProcioneNFT);
         pvpManager = IPVPManager(_pvpManager);
     }
-    
+
+    // ============ Internal Functions ============
+
     /**
      * @dev Verifica che gli ID delle ricette esistano nel CraftingManager
      * @param _itemIds Array di ID delle ricette da verificare
@@ -124,6 +143,8 @@ contract DungeonManager is Ownable, ReentrancyGuard {
             revert InvalidRecipeIds();
         }
     }
+
+    // ============ Admin Functions ============
 
     /**
      * @dev Aggiorna l'indirizzo del contratto CraftingManager
@@ -147,11 +168,6 @@ contract DungeonManager is Ownable, ReentrancyGuard {
 
     /**
      * @dev Inizializza o aggiorna un tipo di dungeon
-     * @param _dungeonId ID del dungeon da inizializzare/aggiornare
-     * @param _itemsRequired Array di ID degli oggetti richiesti
-     * @param _dungeonStats Array delle statistiche del dungeon [Duration, Depth, TrapDensity, EnemyStrength]
-     * @param _timeDuration Durata in secondi del dungeon
-     * @param _numberOfItemsRequired Numero di oggetti richiesti per entrare nel dungeon
      */
     function initializeDungeon(
         uint256 _dungeonId,
@@ -163,21 +179,17 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         require(_timeDuration > 0, "La durata deve essere maggiore di zero");
         require(_itemsRequired.length == _numberOfItemsRequired, "Il numero di oggetti forniti non corrisponde al numero richiesto");
         
-        // Verifica che gli ID corrispondano a ricette valide se ci sono oggetti richiesti
         if (_numberOfItemsRequired > 0) {
             _verifyRecipeIds(_itemsRequired);
         }
 
-        // Crea una nuova DungeonType
         DungeonType storage dungeon = dungeons[_dungeonId];
         
-        // Copia gli oggetti richiesti
-        delete dungeon.itemsRequired; // Pulisce l'array esistente
+        delete dungeon.itemsRequired;
         for (uint256 i = 0; i < _itemsRequired.length; i++) {
             dungeon.itemsRequired.push(_itemsRequired[i]);
         }
 
-        // Copia le statistiche del dungeon
         for (uint256 i = 0; i < 4; i++) {
             dungeon.dungeonStats[i] = _dungeonStats[i];
         }
@@ -190,10 +202,58 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Aggiorna le statistiche di un dungeon esistente
+     */
+    function updateDungeonStats(uint256 _dungeonId, uint256[4] calldata _newStats) external onlyOwner {
+        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
+        
+        for (uint256 i = 0; i < 4; i++) {
+            dungeons[_dungeonId].dungeonStats[i] = _newStats[i];
+        }
+
+        emit DungeonStatsUpdated(_dungeonId, _newStats);
+    }
+
+    /**
+     * @dev Aggiorna gli oggetti richiesti per un dungeon
+     */
+    function updateDungeonItems(
+        uint256 _dungeonId, 
+        uint256[] calldata _newItems,
+        uint256 _newNumberOfItemsRequired
+    ) external onlyOwner {
+        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
+        require(_newItems.length == _newNumberOfItemsRequired, "Il numero di oggetti forniti non corrisponde al numero richiesto");
+        
+        if (_newNumberOfItemsRequired > 0) {
+            _verifyRecipeIds(_newItems);
+        }
+
+        delete dungeons[_dungeonId].itemsRequired;
+        for (uint256 i = 0; i < _newItems.length; i++) {
+            dungeons[_dungeonId].itemsRequired.push(_newItems[i]);
+        }
+
+        dungeons[_dungeonId].numberOfItemsRequired = _newNumberOfItemsRequired;
+        
+        emit DungeonItemsUpdated(_dungeonId, _newItems, _newNumberOfItemsRequired);
+    }
+
+    /**
+     * @dev Aggiorna il tempo di durata di un dungeon
+     */
+    function updateDungeonTime(uint256 _dungeonId, uint256 _newTime) external onlyOwner {
+        require(_newTime > 0, "La durata deve essere maggiore di zero");
+        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
+        
+        dungeons[_dungeonId].timeDuration = _newTime;
+        emit DungeonTimeUpdated(_dungeonId, _newTime);
+    }
+
+    // ============ View Functions ============
+
+    /**
      * @dev Ottiene i requisiti di oggetti per un dungeon specifico
-     * @param _dungeonId ID del dungeon
-     * @return items Array di ID degli oggetti richiesti
-     * @return numRequired Numero di oggetti richiesti
      */
     function getDungeonRequirements(uint256 _dungeonId) 
         external 
@@ -206,8 +266,6 @@ contract DungeonManager is Ownable, ReentrancyGuard {
 
     /**
      * @dev Ottiene le statistiche di un dungeon specifico
-     * @param _dungeonId ID del dungeon
-     * @return Array delle statistiche del dungeon
      */
     function getStatistics(uint256 _dungeonId) external view returns (uint256[4] memory) {
         require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
@@ -216,12 +274,6 @@ contract DungeonManager is Ownable, ReentrancyGuard {
 
     /**
      * @dev Ottiene tutte le informazioni di un dungeon
-     * @param _dungeonId ID del dungeon
-     * @return initialized Se il dungeon è stato inizializzato
-     * @return itemsRequired Array di ID degli oggetti richiesti
-     * @return dungeonStats Array delle statistiche del dungeon
-     * @return timeDuration Durata in secondi del dungeon
-     * @return numberOfItemsRequired Numero di oggetti richiesti
      */
     function getDungeon(uint256 _dungeonId) external view returns (
         bool initialized,
@@ -241,103 +293,52 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Aggiorna le statistiche di un dungeon esistente
-     * @param _dungeonId ID del dungeon
-     * @param _newStats Nuove statistiche del dungeon
+     * @dev Ottiene lo stato del check PVP per un party specifico
      */
-    function updateDungeonStats(uint256 _dungeonId, uint256[4] calldata _newStats) external onlyOwner {
-        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
-        
-        // Copia le nuove statistiche
-        for (uint256 i = 0; i < 4; i++) {
-            dungeons[_dungeonId].dungeonStats[i] = _newStats[i];
-        }
-
-        emit DungeonStatsUpdated(_dungeonId, _newStats);
+    function getPvpCheck(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        return dungeonParties[dungeonId][partyIndex].PVP_CHECK;
     }
 
     /**
-     * @dev Aggiorna gli oggetti richiesti per un dungeon
-     * @param _dungeonId ID del dungeon
-     * @param _newItems Nuovo array di oggetti richiesti
-     * @param _newNumberOfItemsRequired Nuovo numero di oggetti richiesti
+     * @dev Ottiene il risultato del PVP per un party specifico
      */
-    function updateDungeonItems(
-        uint256 _dungeonId, 
-        uint256[] calldata _newItems,
-        uint256 _newNumberOfItemsRequired
-    ) external onlyOwner {
-        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
-        require(_newItems.length == _newNumberOfItemsRequired, "Il numero di oggetti forniti non corrisponde al numero richiesto");
-        
-        // Verifica che gli ID corrispondano a ricette valide solo se ci sono oggetti richiesti
-        if (_newNumberOfItemsRequired > 0) {
-            _verifyRecipeIds(_newItems);
-        }
-
-        // Copia i nuovi oggetti richiesti
-        delete dungeons[_dungeonId].itemsRequired; // Pulisce l'array esistente
-        for (uint256 i = 0; i < _newItems.length; i++) {
-            dungeons[_dungeonId].itemsRequired.push(_newItems[i]);
-        }
-
-        dungeons[_dungeonId].numberOfItemsRequired = _newNumberOfItemsRequired;
-        
-        emit DungeonItemsUpdated(_dungeonId, _newItems, _newNumberOfItemsRequired);
+    function getPvpStatus(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        return dungeonParties[dungeonId][partyIndex].PVP_STATUS;
     }
 
-    /**
-     * @dev Aggiorna il tempo di durata di un dungeon
-     * @param _dungeonId ID del dungeon
-     * @param _newTime Nuova durata in secondi
-     */
-    function updateDungeonTime(uint256 _dungeonId, uint256 _newTime) external onlyOwner {
-        require(_newTime > 0, "La durata deve essere maggiore di zero");
-        require(dungeons[_dungeonId].initialized, "Dungeon non inizializzato");
-        dungeons[_dungeonId].timeDuration = _newTime;
-        emit DungeonTimeUpdated(_dungeonId, _newTime);
-    }
+    // ============ External Functions ============
 
     /**
      * @notice Avvia un dungeon con un team di procioni
-     * @param dungeonId ID del dungeon da avviare
-     * @param procioneIds Array di 3 ID dei procioni
-     * @param itemIds Array di ID degli oggetti da equipaggiare (opzionale)
      */
     function startDungeon(
         uint256 dungeonId,
         uint256[3] calldata procioneIds,
         uint256[] calldata itemIds
     ) external nonReentrant {
-        // Verifica che il dungeon esista
         DungeonType storage dungeon = dungeons[dungeonId];
         if (!dungeon.initialized) revert DungeonNotInitialized();
 
-        // Verifica che il numero di oggetti sia corretto
         if (itemIds.length > 0) {
             if (itemIds.length != dungeon.numberOfItemsRequired) revert InvalidItemCount();
-            // Verifica che gli oggetti siano validi
             _verifyRecipeIds(itemIds);
         }
 
-        // Verifica la proprietà e la salute dei procioni
         uint256[3] memory healthValues;
         for (uint256 i = 0; i < 3; i++) {
-            // Verifica la proprietà
             if (idleProcioneNFT.ownerOf(procioneIds[i]) != msg.sender) {
                 revert InvalidNFTOwner();
             }
 
-            // Ottieni e verifica la salute
             uint256 currentHealth = idleProcioneNFT.getCurrentHealth(procioneIds[i]);
             if (currentHealth == 0) revert InvalidHealth();
             healthValues[i] = currentHealth;
 
-            // Imposta lo stato del dungeon a true
             idleProcioneNFT.setDungeonStatus(procioneIds[i], true);
         }
 
-        // Crea il party
         DungeonParty memory newParty = DungeonParty({
             dungeonId: dungeonId,
             procione1Id: procioneIds[0],
@@ -352,10 +353,8 @@ contract DungeonManager is Ownable, ReentrancyGuard {
             PVP_STATUS: false
         });
 
-        // Aggiungi il party all'array dei party attivi
         dungeonParties[dungeonId].push(newParty);
 
-        // Emetti l'evento
         emit DungeonStarted(
             dungeonId,
             procioneIds[0],
@@ -366,10 +365,10 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         );
     }
 
+    // ============ PVP Functions ============
+
     /**
      * @dev Modifica lo stato PVP_CHECK di un party
-     * @param dungeonId ID del dungeon
-     * @param partyIndex Indice del party nel dungeon
      */
     function pvpEngaged(uint256 dungeonId, uint256 partyIndex) external {
         if (msg.sender != address(pvpManager)) revert UnauthorizedPVPManager();
@@ -381,9 +380,6 @@ contract DungeonManager is Ownable, ReentrancyGuard {
 
     /**
      * @dev Imposta il risultato del PVP per un party
-     * @param dungeonId ID del dungeon
-     * @param partyIndex Indice del party nel dungeon
-     * @param result Risultato del PVP
      */
     function pvpResults(uint256 dungeonId, uint256 partyIndex, bool result) external {
         if (msg.sender != address(pvpManager)) revert UnauthorizedPVPManager();
@@ -391,27 +387,5 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         
         dungeonParties[dungeonId][partyIndex].PVP_STATUS = result;
         emit PVPStatusUpdated(dungeonId, partyIndex, result);
-    }
-
-    /**
-     * @dev Ottiene lo stato del check PVP per un party specifico
-     * @param dungeonId ID del dungeon
-     * @param partyIndex Indice del party nel dungeon
-     * @return bool Stato del check PVP
-     */
-    function getPvpCheck(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
-        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
-        return dungeonParties[dungeonId][partyIndex].PVP_CHECK;
-    }
-
-    /**
-     * @dev Ottiene il risultato del PVP per un party specifico
-     * @param dungeonId ID del dungeon
-     * @param partyIndex Indice del party nel dungeon
-     * @return bool Risultato del PVP
-     */
-    function getPvpStatus(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
-        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
-        return dungeonParties[dungeonId][partyIndex].PVP_STATUS;
     }
 } 

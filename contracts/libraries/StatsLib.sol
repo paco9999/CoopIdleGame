@@ -10,7 +10,9 @@ library StatsLib {
         NONE,           // 0
         ARTISAN,        // 1
         MEDIC,          // 2
-        THIEF           // 3
+        THIEF,          // 3
+        GATHERER,       // 4
+        PALADIN        //  5
     }
 
     // ========== Constants ==========

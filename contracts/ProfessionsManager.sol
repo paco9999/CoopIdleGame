@@ -49,6 +49,14 @@ contract ProfessionsManager is
     address public thiefManager;
     mapping(uint256 => uint256) private thiefAbilityCooldowns; // tokenId => timestamp di fine cooldown
 
+    // Gatherer Specific Variables
+    address public gathererManager;
+    mapping(uint256 => uint256) private gathererAbilityCooldowns; // tokenId => timestamp di fine cooldown
+
+    // Paladin Specific Variables
+    address public paladinManager;
+    mapping(uint256 => uint256) private paladinAbilityCooldowns; // tokenId => timestamp di fine cooldown
+
     // Constants
     uint256 private constant MIN_LEVEL_FOR_PROFESSION = 5;
     uint256 private constant MIN_BREEDING_FOR_PROFESSION = 2;
@@ -84,6 +92,16 @@ contract ProfessionsManager is
     event ThiefAbilityCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
     event ThiefAbilityCooldownExpired(uint256 indexed tokenId);
 
+    // Gatherer Specific Events
+    event GathererManagerUpdated(address indexed oldManager, address indexed newManager);
+    event GathererAbilityCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
+    event GathererAbilityCooldownExpired(uint256 indexed tokenId);
+
+    // Paladin Specific Events
+    event PaladinManagerUpdated(address indexed oldManager, address indexed newManager);
+    event PaladinAbilityCooldownActivated(uint256 indexed tokenId, uint256 cooldownEnd);
+    event PaladinAbilityCooldownExpired(uint256 indexed tokenId);
+
     // ========== Custom Errors ==========
     // General Errors
     error InvalidAddress();
@@ -116,6 +134,16 @@ contract ProfessionsManager is
     error NotThief();
     error ThiefOnCooldown();
 
+    // Gatherer Specific Errors
+    error NotGathererManager();
+    error NotGatherer();
+    error GathererOnCooldown();
+
+    // Paladin Specific Errors
+    error NotPaladinManager();
+    error NotPaladin();
+    error PaladinOnCooldown();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -141,6 +169,14 @@ contract ProfessionsManager is
         // Imposta il livello massimo per il Thief a 20
         professionMaxLevels[uint256(StatsLib.Professions.THIEF)] = 20;
         emit ProfessionMaxLevelUpdated(StatsLib.Professions.THIEF, 20);
+
+        // Imposta il livello massimo per il Gatherer a 20
+        professionMaxLevels[uint256(StatsLib.Professions.GATHERER)] = 20;
+        emit ProfessionMaxLevelUpdated(StatsLib.Professions.GATHERER, 20);
+
+        // Imposta il livello massimo per il Paladin a 20
+        professionMaxLevels[uint256(StatsLib.Professions.PALADIN)] = 20;
+        emit ProfessionMaxLevelUpdated(StatsLib.Professions.PALADIN, 20);
     }
 
     // ========== General Profession Functions ==========
@@ -560,6 +596,116 @@ contract ProfessionsManager is
     /// @param level Il livello del ladro
     /// @return Il cooldown in secondi
     function getThiefCooldown(uint256 level) public pure returns (uint256) {
+        if (level <= 4) return 24 * HOURS_TO_SECONDS;
+        if (level <= 9) return 20 * HOURS_TO_SECONDS;
+        if (level <= 14) return 16 * HOURS_TO_SECONDS;
+        if (level <= 19) return 12 * HOURS_TO_SECONDS;
+        if (level == 20) return 6 * HOURS_TO_SECONDS;
+        return 24 * HOURS_TO_SECONDS; // Default al cooldown massimo
+    }
+
+    // ========== Gatherer Specific Functions ==========
+
+    /// @notice Imposta l'indirizzo del GathererManager
+    /// @param _newManager Il nuovo indirizzo del GathererManager
+    function setGathererManager(address _newManager) external onlyOwner {
+        if (_newManager == address(0)) revert InvalidAddress();
+        address oldManager = gathererManager;
+        gathererManager = _newManager;
+        emit GathererManagerUpdated(oldManager, _newManager);
+    }
+
+    /// @notice Attiva il cooldown per un gatherer
+    /// @param tokenId L'ID del token del gatherer
+    function activateGathererCooldown(uint256 tokenId) external {
+        if (msg.sender != gathererManager) revert NotGathererManager();
+        
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.GATHERER) revert NotGatherer();
+        
+        uint256 cooldownDuration = getGathererCooldown(level);
+        uint256 cooldownEnd = block.timestamp + cooldownDuration;
+        gathererAbilityCooldowns[tokenId] = cooldownEnd;
+        
+        emit GathererAbilityCooldownActivated(tokenId, cooldownEnd);
+    }
+
+    /// @notice Verifica se un gatherer è in cooldown
+    /// @param tokenId L'ID del token del gatherer
+    /// @return true se il gatherer è in cooldown, false altrimenti
+    function isGathererOnCooldown(uint256 tokenId) public view returns (bool) {
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.GATHERER) revert NotGatherer();
+        
+        uint256 cooldownEnd = gathererAbilityCooldowns[tokenId];
+        if (cooldownEnd == 0) return false;
+        
+        if (block.timestamp >= cooldownEnd) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// @notice Ottiene il cooldown in secondi per un gatherer in base al suo livello
+    /// @param level Il livello del gatherer
+    /// @return Il cooldown in secondi
+    function getGathererCooldown(uint256 level) public pure returns (uint256) {
+        if (level <= 4) return 24 * HOURS_TO_SECONDS;
+        if (level <= 9) return 20 * HOURS_TO_SECONDS;
+        if (level <= 14) return 16 * HOURS_TO_SECONDS;
+        if (level <= 19) return 12 * HOURS_TO_SECONDS;
+        if (level == 20) return 6 * HOURS_TO_SECONDS;
+        return 24 * HOURS_TO_SECONDS; // Default al cooldown massimo
+    }
+
+    // ========== Paladin Specific Functions ==========
+
+    /// @notice Imposta l'indirizzo del PaladinManager
+    /// @param _newManager Il nuovo indirizzo del PaladinManager
+    function setPaladinManager(address _newManager) external onlyOwner {
+        if (_newManager == address(0)) revert InvalidAddress();
+        address oldManager = paladinManager;
+        paladinManager = _newManager;
+        emit PaladinManagerUpdated(oldManager, _newManager);
+    }
+
+    /// @notice Attiva il cooldown per un paladin
+    /// @param tokenId L'ID del token del paladin
+    function activatePaladinCooldown(uint256 tokenId) external {
+        if (msg.sender != paladinManager) revert NotPaladinManager();
+        
+        (StatsLib.Professions profession, uint256 level,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.PALADIN) revert NotPaladin();
+        
+        uint256 cooldownDuration = getPaladinCooldown(level);
+        uint256 cooldownEnd = block.timestamp + cooldownDuration;
+        paladinAbilityCooldowns[tokenId] = cooldownEnd;
+        
+        emit PaladinAbilityCooldownActivated(tokenId, cooldownEnd);
+    }
+
+    /// @notice Verifica se un paladin è in cooldown
+    /// @param tokenId L'ID del token del paladin
+    /// @return true se il paladin è in cooldown, false altrimenti
+    function isPaladinOnCooldown(uint256 tokenId) public view returns (bool) {
+        (StatsLib.Professions profession,,) = nftContract.getProfessionInfo(tokenId);
+        if (profession != StatsLib.Professions.PALADIN) revert NotPaladin();
+        
+        uint256 cooldownEnd = paladinAbilityCooldowns[tokenId];
+        if (cooldownEnd == 0) return false;
+        
+        if (block.timestamp >= cooldownEnd) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// @notice Ottiene il cooldown in secondi per un paladin in base al suo livello
+    /// @param level Il livello del paladin
+    /// @return Il cooldown in secondi
+    function getPaladinCooldown(uint256 level) public pure returns (uint256) {
         if (level <= 4) return 24 * HOURS_TO_SECONDS;
         if (level <= 9) return 20 * HOURS_TO_SECONDS;
         if (level <= 14) return 16 * HOURS_TO_SECONDS;

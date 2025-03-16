@@ -19,7 +19,7 @@ library FactionClassLib {
     enum Class {
         NONE,
         WARRIOR,
-        ROGUE,
+        EXPLORER,
         MAGE,
         RANGER,
         TANK

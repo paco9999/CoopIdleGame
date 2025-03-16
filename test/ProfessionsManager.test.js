@@ -751,6 +751,402 @@ describe("ProfessionsManager", function () {
         });
     });
 
+    describe("Funzionalità Paladin", function () {
+        let tokenId;
+        let paladinManagerSigner;
+
+        beforeEach(async function () {
+            // Setup per il mint e l'assegnazione della professione Paladin
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId, newData);
+            await mockBreedingContract.setBreedCount(tokenId, 2);
+            await professionsManager.connect(addr1).assignProfession(tokenId, 5); // PALADIN
+
+            // Setup del PaladinManager
+            const signers = await ethers.getSigners();
+            paladinManagerSigner = signers[3];
+            await professionsManager.setPaladinManager(paladinManagerSigner.address);
+        });
+
+        describe("Gestione Cooldown Abilità", function () {
+            it("Dovrebbe calcolare correttamente il cooldown per ogni range di livello", async function () {
+                const cooldowns = {
+                    1: 24 * 3600,  // Livelli 1-4: 24 ore
+                    5: 20 * 3600,  // Livelli 5-9: 20 ore
+                    10: 16 * 3600, // Livelli 10-14: 16 ore
+                    15: 12 * 3600, // Livelli 15-19: 12 ore
+                    20: 6 * 3600   // Livello 20: 6 ore
+                };
+
+                // Test per ogni range di livelli
+                expect(await professionsManager.getPaladinCooldown(1)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getPaladinCooldown(4)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getPaladinCooldown(5)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getPaladinCooldown(9)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getPaladinCooldown(10)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getPaladinCooldown(14)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getPaladinCooldown(15)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getPaladinCooldown(19)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getPaladinCooldown(20)).to.equal(cooldowns[20]);
+            });
+
+            it("Dovrebbe attivare il cooldown dell'abilità correttamente", async function () {
+                const tx = await professionsManager.connect(paladinManagerSigner).activatePaladinCooldown(tokenId);
+                const receipt = await tx.wait();
+                
+                const cooldownEvent = receipt.logs.find(
+                    log => log.fragment && log.fragment.name === 'PaladinAbilityCooldownActivated'
+                );
+                expect(cooldownEvent).to.not.be.undefined;
+
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.true;
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown da non-PaladinManager", async function () {
+                await expect(professionsManager.connect(addr1).activatePaladinCooldown(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "NotPaladinManager");
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown per non-Paladin", async function () {
+                // Creiamo un nuovo procione con professione Artisan
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                await professionsManager.connect(addr2).assignProfession(tokenId2, 1); // ARTISAN
+
+                await expect(professionsManager.connect(paladinManagerSigner).activatePaladinCooldown(tokenId2))
+                    .to.be.revertedWithCustomError(professionsManager, "NotPaladin");
+            });
+
+            it("Dovrebbe gestire correttamente la scadenza del cooldown", async function () {
+                await professionsManager.connect(paladinManagerSigner).activatePaladinCooldown(tokenId);
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 24 ore (cooldown per livello 1-4)
+                await time.increase(24 * 3600);
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe applicare il cooldown corretto in base al livello", async function () {
+                // Level up il paladin al livello 5
+                // Calcoliamo l'EXP necessaria per ogni livello
+                const expNeeded = [400, 900, 1600, 2500];
+                
+                for (let i = 0; i < 4; i++) {
+                    await professionsManager.connect(addr1).addProfessionExp(tokenId, expNeeded[i]);
+                    await professionsManager.connect(addr1).professionLevelUp(tokenId);
+                    
+                    // Verifichiamo il livello dopo ogni level up
+                    const [, level,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                    expect(level).to.equal(i + 2); // i + 2 perché partiamo dal livello 1
+                }
+
+                await professionsManager.connect(paladinManagerSigner).activatePaladinCooldown(tokenId);
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 19 ore (ancora in cooldown per livello 5 che è 20 ore)
+                await time.increase(19 * 3600);
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isPaladinOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe supportare il level up fino al livello 20", async function () {
+                // Setup per il mint di un nuovo NFT dedicato per questo test
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.setPhaseStatus(1, true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const paladinTokenId = 1; // Nuovo token dedicato per questo test
+                
+                // Setup dei requisiti base per la professione
+                const data = await idleProcioneNFT.getProcioneData(paladinTokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(paladinTokenId, newData);
+                await mockBreedingContract.setBreedCount(paladinTokenId, 2);
+                
+                // Assegna la professione Paladin
+                await professionsManager.connect(addr2).assignProfession(paladinTokenId, 5);
+                
+                // Verifica il livello massimo impostato per il Paladin
+                const maxLevel = await professionsManager.getProfessionMaxLevel(5);
+                console.log(`Max level for Paladin: ${maxLevel}`);
+                
+                // Loop di level up fino al livello 20
+                for (let currentLevel = 1; currentLevel < 20; currentLevel++) {
+                    const expNeeded = 100 * ((currentLevel + 1) ** 2);
+                    console.log(`Level ${currentLevel}: Adding ${expNeeded} exp`);
+                    
+                    await professionsManager.connect(addr2).addProfessionExp(paladinTokenId, expNeeded);
+                    const [profession, levelBefore, expBefore] = await idleProcioneNFT.getProfessionInfo(paladinTokenId);
+                    console.log(`Before level up: Profession ${profession}, Level ${levelBefore}, Exp ${expBefore}`);
+                    
+                    const isValid = await professionsManager.isValidProfessionLevel(5, currentLevel + 1);
+                    console.log(`Is level ${currentLevel + 1} valid? ${isValid}`);
+                    
+                    await professionsManager.connect(addr2).professionLevelUp(paladinTokenId);
+                    const [professionAfter, levelAfter, expAfter] = await idleProcioneNFT.getProfessionInfo(paladinTokenId);
+                    console.log(`After level up: Profession ${professionAfter}, Level ${levelAfter}, Exp ${expAfter}`);
+                    
+                    // Verifica del livello
+                    expect(levelAfter).to.equal(currentLevel + 1);
+                }
+
+                // Verifichiamo che il cooldown al livello 20 sia di 6 ore
+                await professionsManager.connect(paladinManagerSigner).activatePaladinCooldown(paladinTokenId);
+                expect(await professionsManager.isPaladinOnCooldown(paladinTokenId)).to.be.true;
+
+                // Avanziamo il tempo di 5 ore (ancora in cooldown)
+                await time.increase(5 * 3600);
+                expect(await professionsManager.isPaladinOnCooldown(paladinTokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isPaladinOnCooldown(paladinTokenId)).to.be.false;
+            });
+        });
+
+        describe("Gestione PaladinManager", function () {
+            it("Dovrebbe permettere all'owner di impostare il PaladinManager", async function () {
+                const newManager = addr2.address;
+                await expect(professionsManager.setPaladinManager(newManager))
+                    .to.emit(professionsManager, "PaladinManagerUpdated")
+                    .withArgs(paladinManagerSigner.address, newManager);
+            });
+
+            it("Non dovrebbe permettere di impostare un PaladinManager con indirizzo zero", async function () {
+                await expect(professionsManager.setPaladinManager(ethers.ZeroAddress))
+                    .to.be.revertedWithCustomError(professionsManager, "InvalidAddress");
+            });
+
+            it("Non dovrebbe permettere a non-owner di impostare il PaladinManager", async function () {
+                await expect(professionsManager.connect(addr1).setPaladinManager(addr2.address))
+                    .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                    .withArgs(addr1.address);
+            });
+        });
+    });
+
+    describe("Funzionalità Gatherer", function () {
+        let tokenId;
+        let gathererManagerSigner;
+
+        beforeEach(async function () {
+            // Setup per il mint e l'assegnazione della professione Gatherer
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            await idleProcioneNFT.connect(addr1).randomMint();
+            
+            const requestId = await mockVRFCoordinator.getLastRequestId();
+            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            
+            tokenId = 0;
+
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            let newData = await idleProcioneNFT.setLevel(data, 5);
+            await idleProcioneNFT.updateProcioneData(tokenId, newData);
+            await mockBreedingContract.setBreedCount(tokenId, 2);
+            await professionsManager.connect(addr1).assignProfession(tokenId, 4); // GATHERER
+
+            // Setup del GathererManager
+            const signers = await ethers.getSigners();
+            gathererManagerSigner = signers[3];
+            await professionsManager.setGathererManager(gathererManagerSigner.address);
+        });
+
+        describe("Gestione Cooldown Abilità", function () {
+            it("Dovrebbe calcolare correttamente il cooldown per ogni range di livello", async function () {
+                const cooldowns = {
+                    1: 24 * 3600,  // Livelli 1-4: 24 ore
+                    5: 20 * 3600,  // Livelli 5-9: 20 ore
+                    10: 16 * 3600, // Livelli 10-14: 16 ore
+                    15: 12 * 3600, // Livelli 15-19: 12 ore
+                    20: 6 * 3600   // Livello 20: 6 ore
+                };
+
+                // Test per ogni range di livelli
+                expect(await professionsManager.getGathererCooldown(1)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getGathererCooldown(4)).to.equal(cooldowns[1]);
+                expect(await professionsManager.getGathererCooldown(5)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getGathererCooldown(9)).to.equal(cooldowns[5]);
+                expect(await professionsManager.getGathererCooldown(10)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getGathererCooldown(14)).to.equal(cooldowns[10]);
+                expect(await professionsManager.getGathererCooldown(15)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getGathererCooldown(19)).to.equal(cooldowns[15]);
+                expect(await professionsManager.getGathererCooldown(20)).to.equal(cooldowns[20]);
+            });
+
+            it("Dovrebbe attivare il cooldown dell'abilità correttamente", async function () {
+                const tx = await professionsManager.connect(gathererManagerSigner).activateGathererCooldown(tokenId);
+                const receipt = await tx.wait();
+                
+                const cooldownEvent = receipt.logs.find(
+                    log => log.fragment && log.fragment.name === 'GathererAbilityCooldownActivated'
+                );
+                expect(cooldownEvent).to.not.be.undefined;
+
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.true;
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown da non-GathererManager", async function () {
+                await expect(professionsManager.connect(addr1).activateGathererCooldown(tokenId))
+                    .to.be.revertedWithCustomError(professionsManager, "NotGathererManager");
+            });
+
+            it("Non dovrebbe permettere l'attivazione del cooldown per non-Gatherer", async function () {
+                // Creiamo un nuovo procione con professione Artisan
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const tokenId2 = 1;
+                const data = await idleProcioneNFT.getProcioneData(tokenId2);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(tokenId2, newData);
+                await mockBreedingContract.setBreedCount(tokenId2, 2);
+                await professionsManager.connect(addr2).assignProfession(tokenId2, 1); // ARTISAN
+
+                await expect(professionsManager.connect(gathererManagerSigner).activateGathererCooldown(tokenId2))
+                    .to.be.revertedWithCustomError(professionsManager, "NotGatherer");
+            });
+
+            it("Dovrebbe gestire correttamente la scadenza del cooldown", async function () {
+                await professionsManager.connect(gathererManagerSigner).activateGathererCooldown(tokenId);
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 24 ore (cooldown per livello 1-4)
+                await time.increase(24 * 3600);
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe applicare il cooldown corretto in base al livello", async function () {
+                // Level up il gatherer al livello 5
+                // Calcoliamo l'EXP necessaria per ogni livello
+                const expNeeded = [400, 900, 1600, 2500];
+                
+                for (let i = 0; i < 4; i++) {
+                    await professionsManager.connect(addr1).addProfessionExp(tokenId, expNeeded[i]);
+                    await professionsManager.connect(addr1).professionLevelUp(tokenId);
+                    
+                    // Verifichiamo il livello dopo ogni level up
+                    const [, level,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+                    expect(level).to.equal(i + 2); // i + 2 perché partiamo dal livello 1
+                }
+
+                await professionsManager.connect(gathererManagerSigner).activateGathererCooldown(tokenId);
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo il tempo di 19 ore (ancora in cooldown per livello 5 che è 20 ore)
+                await time.increase(19 * 3600);
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isGathererOnCooldown(tokenId)).to.be.false;
+            });
+
+            it("Dovrebbe supportare il level up fino al livello 20", async function () {
+                // Setup per il mint di un nuovo NFT dedicato per questo test
+                await idleProcioneNFT.setWhitelistPhase1([addr2.address], true);
+                await idleProcioneNFT.setPhaseStatus(1, true);
+                await idleProcioneNFT.connect(addr2).randomMint();
+                
+                const requestId = await mockVRFCoordinator.getLastRequestId();
+                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                
+                const gathererTokenId = 1; // Nuovo token dedicato per questo test
+                
+                // Setup dei requisiti base per la professione
+                const data = await idleProcioneNFT.getProcioneData(gathererTokenId);
+                let newData = await idleProcioneNFT.setLevel(data, 5);
+                await idleProcioneNFT.updateProcioneData(gathererTokenId, newData);
+                await mockBreedingContract.setBreedCount(gathererTokenId, 2);
+                
+                // Assegna la professione Gatherer
+                await professionsManager.connect(addr2).assignProfession(gathererTokenId, 4);
+                
+                // Verifica il livello massimo impostato per il Gatherer
+                const maxLevel = await professionsManager.getProfessionMaxLevel(4);
+                console.log(`Max level for Gatherer: ${maxLevel}`);
+                
+                // Loop di level up fino al livello 20
+                for (let currentLevel = 1; currentLevel < 20; currentLevel++) {
+                    const expNeeded = 100 * ((currentLevel + 1) ** 2);
+                    console.log(`Level ${currentLevel}: Adding ${expNeeded} exp`);
+                    
+                    await professionsManager.connect(addr2).addProfessionExp(gathererTokenId, expNeeded);
+                    const [profession, levelBefore, expBefore] = await idleProcioneNFT.getProfessionInfo(gathererTokenId);
+                    console.log(`Before level up: Profession ${profession}, Level ${levelBefore}, Exp ${expBefore}`);
+                    
+                    const isValid = await professionsManager.isValidProfessionLevel(4, currentLevel + 1);
+                    console.log(`Is level ${currentLevel + 1} valid? ${isValid}`);
+                    
+                    await professionsManager.connect(addr2).professionLevelUp(gathererTokenId);
+                    const [professionAfter, levelAfter, expAfter] = await idleProcioneNFT.getProfessionInfo(gathererTokenId);
+                    console.log(`After level up: Profession ${professionAfter}, Level ${levelAfter}, Exp ${expAfter}`);
+                    
+                    // Verifica del livello
+                    expect(levelAfter).to.equal(currentLevel + 1);
+                }
+
+                // Verifichiamo che il cooldown al livello 20 sia di 6 ore
+                await professionsManager.connect(gathererManagerSigner).activateGathererCooldown(gathererTokenId);
+                expect(await professionsManager.isGathererOnCooldown(gathererTokenId)).to.be.true;
+
+                // Avanziamo il tempo di 5 ore (ancora in cooldown)
+                await time.increase(5 * 3600);
+                expect(await professionsManager.isGathererOnCooldown(gathererTokenId)).to.be.true;
+
+                // Avanziamo di un'altra ora (cooldown finito)
+                await time.increase(1 * 3600);
+                expect(await professionsManager.isGathererOnCooldown(gathererTokenId)).to.be.false;
+            });
+        });
+
+        describe("Gestione GathererManager", function () {
+            it("Dovrebbe permettere all'owner di impostare il GathererManager", async function () {
+                const newManager = addr2.address;
+                await expect(professionsManager.setGathererManager(newManager))
+                    .to.emit(professionsManager, "GathererManagerUpdated")
+                    .withArgs(gathererManagerSigner.address, newManager);
+            });
+
+            it("Non dovrebbe permettere di impostare un GathererManager con indirizzo zero", async function () {
+                await expect(professionsManager.setGathererManager(ethers.ZeroAddress))
+                    .to.be.revertedWithCustomError(professionsManager, "InvalidAddress");
+            });
+
+            it("Non dovrebbe permettere a non-owner di impostare il GathererManager", async function () {
+                await expect(professionsManager.connect(addr1).setGathererManager(addr2.address))
+                    .to.be.revertedWithCustomError(professionsManager, "OwnableUnauthorizedAccount")
+                    .withArgs(addr1.address);
+            });
+        });
+    });
+
     describe("Admin Functions", function () {
         it("Dovrebbe permettere all'owner di impostare il limite delle professioni", async function () {
             await professionsManager.setProfessionLimit(1, 500);

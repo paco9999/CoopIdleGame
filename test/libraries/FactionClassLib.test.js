@@ -30,7 +30,7 @@ describe("FactionClassLib", function() {
       it("Dovrebbe avere i valori corretti per le classi", async function() {
         expect(await factionClassLibTest.Class_NONE()).to.equal(0);
         expect(await factionClassLibTest.Class_WARRIOR()).to.equal(1);
-        expect(await factionClassLibTest.Class_ROGUE()).to.equal(2);
+        expect(await factionClassLibTest.Class_EXPLORER()).to.equal(2);
         expect(await factionClassLibTest.Class_MAGE()).to.equal(3);
         expect(await factionClassLibTest.Class_RANGER()).to.equal(4);
         expect(await factionClassLibTest.Class_TANK()).to.equal(5);

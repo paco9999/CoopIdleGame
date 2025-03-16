@@ -23,7 +23,7 @@ contract FactionClassLibTest {
 
     function Class_NONE() public pure returns (uint256) { return uint256(FactionClassLib.Class.NONE); }
     function Class_WARRIOR() public pure returns (uint256) { return uint256(FactionClassLib.Class.WARRIOR); }
-    function Class_ROGUE() public pure returns (uint256) { return uint256(FactionClassLib.Class.ROGUE); }
+    function Class_EXPLORER() public pure returns (uint256) { return uint256(FactionClassLib.Class.EXPLORER); }
     function Class_MAGE() public pure returns (uint256) { return uint256(FactionClassLib.Class.MAGE); }
     function Class_RANGER() public pure returns (uint256) { return uint256(FactionClassLib.Class.RANGER); }
     function Class_TANK() public pure returns (uint256) { return uint256(FactionClassLib.Class.TANK); }
