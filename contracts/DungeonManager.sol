@@ -15,6 +15,10 @@ interface ICraftingManager {
     function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool);
 }
 
+interface IPVPManager {
+    // Interfaccia vuota per type safety
+}
+
 /**
  * @title DungeonManager
  * @dev Gestisce la creazione e la configurazione dei dungeon
@@ -38,6 +42,8 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         uint256 procione3Health;
         uint256[] equippedItems;
         uint256 endTime;
+        bool PVP_CHECK;
+        bool PVP_STATUS;
     }
 
     // Mapping dall'ID del dungeon al tipo di dungeon
@@ -52,6 +58,9 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     // Indirizzo del contratto IdleProcioneNFT
     IIdleProcioneNFT public idleProcioneNFT;
 
+    // Indirizzo del contratto PVPManager
+    IPVPManager public pvpManager;
+
     // Eventi
     event DungeonInitialized(
         uint256 indexed dungeonId, 
@@ -64,6 +73,9 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     event DungeonItemsUpdated(uint256 indexed dungeonId, uint256[] newItems, uint256 numberOfItemsRequired);
     event DungeonTimeUpdated(uint256 indexed dungeonId, uint256 newTime);
     event CraftingManagerAddressUpdated(address indexed newAddress);
+    event PVPManagerAddressUpdated(address indexed newAddress);
+    event PVPStatusUpdated(uint256 indexed dungeonId, uint256 partyIndex, bool pvpStatus);
+    event PVPCheckUpdated(uint256 indexed dungeonId, uint256 partyIndex, bool pvpCheck);
     event DungeonStarted(
         uint256 indexed dungeonId,
         uint256 procione1Id,
@@ -80,17 +92,27 @@ contract DungeonManager is Ownable, ReentrancyGuard {
     error DungeonNotInitialized();
     error InvalidItemCount();
     error InvalidProcioneCount();
+    error UnauthorizedPVPManager();
+    error InvalidPartyIndex();
+    error InvalidPVPManager();
 
     /**
      * @dev Costruttore che imposta gli indirizzi dei contratti necessari
      * @param _idleProcioneNFT Indirizzo del contratto IdleProcioneNFT
      * @param _craftingManager Indirizzo del contratto CraftingManager
+     * @param _pvpManager Indirizzo del contratto PVPManager
      */
-    constructor(address _idleProcioneNFT, address _craftingManager) Ownable(msg.sender) {
+    constructor(
+        address _idleProcioneNFT, 
+        address _craftingManager,
+        address _pvpManager
+    ) Ownable(msg.sender) {
         require(_craftingManager != address(0), "Indirizzo CraftingManager non valido");
         require(_idleProcioneNFT != address(0), "Indirizzo IdleProcioneNFT non valido");
+        require(_pvpManager != address(0), "Indirizzo PVPManager non valido");
         craftingManager = ICraftingManager(_craftingManager);
         idleProcioneNFT = IIdleProcioneNFT(_idleProcioneNFT);
+        pvpManager = IPVPManager(_pvpManager);
     }
     
     /**
@@ -111,6 +133,16 @@ contract DungeonManager is Ownable, ReentrancyGuard {
         require(_newAddress != address(0), "Indirizzo non valido");
         craftingManager = ICraftingManager(_newAddress);
         emit CraftingManagerAddressUpdated(_newAddress);
+    }
+
+    /**
+     * @dev Aggiorna l'indirizzo del contratto PVPManager
+     * @param _newAddress Nuovo indirizzo del contratto
+     */
+    function updatePVPManagerAddress(address _newAddress) external onlyOwner {
+        if (_newAddress == address(0)) revert InvalidPVPManager();
+        pvpManager = IPVPManager(_newAddress);
+        emit PVPManagerAddressUpdated(_newAddress);
     }
 
     /**
@@ -315,7 +347,9 @@ contract DungeonManager is Ownable, ReentrancyGuard {
             procione3Id: procioneIds[2],
             procione3Health: healthValues[2],
             equippedItems: itemIds,
-            endTime: block.timestamp + dungeon.timeDuration
+            endTime: block.timestamp + dungeon.timeDuration,
+            PVP_CHECK: false,
+            PVP_STATUS: false
         });
 
         // Aggiungi il party all'array dei party attivi
@@ -330,5 +364,54 @@ contract DungeonManager is Ownable, ReentrancyGuard {
             itemIds,
             newParty.endTime
         );
+    }
+
+    /**
+     * @dev Modifica lo stato PVP_CHECK di un party
+     * @param dungeonId ID del dungeon
+     * @param partyIndex Indice del party nel dungeon
+     */
+    function pvpEngaged(uint256 dungeonId, uint256 partyIndex) external {
+        if (msg.sender != address(pvpManager)) revert UnauthorizedPVPManager();
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        
+        dungeonParties[dungeonId][partyIndex].PVP_CHECK = true;
+        emit PVPCheckUpdated(dungeonId, partyIndex, true);
+    }
+
+    /**
+     * @dev Imposta il risultato del PVP per un party
+     * @param dungeonId ID del dungeon
+     * @param partyIndex Indice del party nel dungeon
+     * @param result Risultato del PVP
+     */
+    function pvpResults(uint256 dungeonId, uint256 partyIndex, bool result) external {
+        if (msg.sender != address(pvpManager)) revert UnauthorizedPVPManager();
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        
+        dungeonParties[dungeonId][partyIndex].PVP_STATUS = result;
+        emit PVPStatusUpdated(dungeonId, partyIndex, result);
+    }
+
+    /**
+     * @dev Ottiene lo stato del check PVP per un party specifico
+     * @param dungeonId ID del dungeon
+     * @param partyIndex Indice del party nel dungeon
+     * @return bool Stato del check PVP
+     */
+    function getPvpCheck(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        return dungeonParties[dungeonId][partyIndex].PVP_CHECK;
+    }
+
+    /**
+     * @dev Ottiene il risultato del PVP per un party specifico
+     * @param dungeonId ID del dungeon
+     * @param partyIndex Indice del party nel dungeon
+     * @return bool Risultato del PVP
+     */
+    function getPvpStatus(uint256 dungeonId, uint256 partyIndex) external view returns (bool) {
+        if (partyIndex >= dungeonParties[dungeonId].length) revert InvalidPartyIndex();
+        return dungeonParties[dungeonId][partyIndex].PVP_STATUS;
     }
 } 

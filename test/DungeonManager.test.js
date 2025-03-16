@@ -6,12 +6,14 @@ describe("DungeonManager", function () {
     let dungeonManager;
     let craftingManager;
     let idleProcioneNFT;
+    let pvpManager;
+    let pvpManagerSigner;
     let owner;
     let addr1;
     let addr2;
 
     beforeEach(async function () {
-        [owner, addr1, addr2] = await ethers.getSigners();
+        [owner, addr1, addr2, pvpManagerSigner] = await ethers.getSigners();
 
         // Deploy del mock CraftingManager
         const CraftingManager = await ethers.getContractFactory("contracts/mocks/MockCraftingManager.sol:MockCraftingManager");
@@ -21,9 +23,17 @@ describe("DungeonManager", function () {
         const MockIdleProcioneNFT = await ethers.getContractFactory("contracts/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
         idleProcioneNFT = await MockIdleProcioneNFT.deploy();
 
+        // Deploy del mock PVPManager
+        const MockPVPManager = await ethers.getContractFactory("contracts/mocks/MockPVPManager.sol:MockPVPManager");
+        pvpManager = await MockPVPManager.deploy();
+
         // Deploy del DungeonManager
         const DungeonManager = await ethers.getContractFactory("DungeonManager");
-        dungeonManager = await DungeonManager.deploy(await idleProcioneNFT.getAddress(), await craftingManager.getAddress());
+        dungeonManager = await DungeonManager.deploy(
+            await idleProcioneNFT.getAddress(), 
+            await craftingManager.getAddress(),
+            pvpManagerSigner.address // Usiamo l'indirizzo del signer invece del contratto mock
+        );
     });
 
     describe("Inizializzazione", function () {
@@ -311,6 +321,139 @@ describe("DungeonManager", function () {
             await expect(
                 dungeonManager.connect(addr1).startDungeon(999, procioneIds, itemsRequired)
             ).to.be.revertedWithCustomError(dungeonManager, "DungeonNotInitialized");
+        });
+    });
+
+    describe("Gestione PVP", function () {
+        const dungeonId = 1;
+        const itemsRequired = [1, 2, 3];
+        const dungeonStats = [100, 200, 300, 400];
+        const timeDuration = 3600;
+        const numberOfItemsRequired = 3;
+        let procioneIds;
+        let partyIndex = 0;
+
+        beforeEach(async function () {
+            // Mint di 3 procioni per i test
+            procioneIds = [0, 1, 2];
+            for (const id of procioneIds) {
+                await idleProcioneNFT.mint(addr1.address, id);
+            }
+
+            // Imposta le ricette come valide nel mock
+            for (const recipeId of itemsRequired) {
+                await craftingManager.setRecipeValidity(recipeId, true);
+            }
+
+            // Inizializza il dungeon
+            await dungeonManager.initializeDungeon(
+                dungeonId,
+                itemsRequired,
+                dungeonStats,
+                timeDuration,
+                numberOfItemsRequired
+            );
+
+            // Crea un party per i test
+            await dungeonManager.connect(addr1).startDungeon(
+                dungeonId,
+                procioneIds,
+                itemsRequired
+            );
+        });
+
+        it("Dovrebbe permettere solo al PVPManager di chiamare pvpEngaged", async function () {
+            await expect(
+                dungeonManager.connect(addr1).pvpEngaged(dungeonId, partyIndex)
+            ).to.be.revertedWithCustomError(dungeonManager, "UnauthorizedPVPManager");
+
+            await expect(
+                dungeonManager.connect(pvpManagerSigner).pvpEngaged(dungeonId, partyIndex)
+            ).to.not.be.reverted;
+        });
+
+        it("Dovrebbe permettere solo al PVPManager di chiamare pvpResults", async function () {
+            await expect(
+                dungeonManager.connect(addr1).pvpResults(dungeonId, partyIndex, true)
+            ).to.be.revertedWithCustomError(dungeonManager, "UnauthorizedPVPManager");
+
+            await expect(
+                dungeonManager.connect(pvpManagerSigner).pvpResults(dungeonId, partyIndex, true)
+            ).to.not.be.reverted;
+        });
+
+        it("Dovrebbe aggiornare correttamente lo stato PVP_CHECK", async function () {
+            await dungeonManager.connect(pvpManagerSigner).pvpEngaged(dungeonId, partyIndex);
+            
+            expect(await dungeonManager.getPvpCheck(dungeonId, partyIndex)).to.be.true;
+        });
+
+        it("Dovrebbe aggiornare correttamente lo stato PVP_STATUS", async function () {
+            await dungeonManager.connect(pvpManagerSigner).pvpResults(dungeonId, partyIndex, true);
+            
+            expect(await dungeonManager.getPvpStatus(dungeonId, partyIndex)).to.be.true;
+        });
+
+        it("Dovrebbe emettere l'evento PVPCheckUpdated", async function () {
+            await expect(dungeonManager.connect(pvpManagerSigner).pvpEngaged(dungeonId, partyIndex))
+                .to.emit(dungeonManager, "PVPCheckUpdated")
+                .withArgs(dungeonId, partyIndex, true);
+        });
+
+        it("Dovrebbe emettere l'evento PVPStatusUpdated", async function () {
+            await expect(dungeonManager.connect(pvpManagerSigner).pvpResults(dungeonId, partyIndex, true))
+                .to.emit(dungeonManager, "PVPStatusUpdated")
+                .withArgs(dungeonId, partyIndex, true);
+        });
+
+        it("Non dovrebbe permettere l'accesso con indice party non valido", async function () {
+            const invalidIndex = 999;
+            await expect(
+                dungeonManager.connect(pvpManagerSigner).pvpEngaged(dungeonId, invalidIndex)
+            ).to.be.revertedWithCustomError(dungeonManager, "InvalidPartyIndex");
+
+            await expect(
+                dungeonManager.connect(pvpManagerSigner).pvpResults(dungeonId, invalidIndex, true)
+            ).to.be.revertedWithCustomError(dungeonManager, "InvalidPartyIndex");
+        });
+
+        it("Dovrebbe permettere all'owner di aggiornare l'indirizzo del PVPManager", async function () {
+            const newPVPManager = addr2.address;
+            await expect(dungeonManager.connect(owner).updatePVPManagerAddress(newPVPManager))
+                .to.emit(dungeonManager, "PVPManagerAddressUpdated")
+                .withArgs(newPVPManager);
+
+            expect(await dungeonManager.pvpManager()).to.equal(newPVPManager);
+        });
+
+        it("Non dovrebbe permettere di impostare un indirizzo PVPManager non valido", async function () {
+            await expect(
+                dungeonManager.connect(owner).updatePVPManagerAddress(ethers.ZeroAddress)
+            ).to.be.revertedWithCustomError(dungeonManager, "InvalidPVPManager");
+        });
+
+        it("Non dovrebbe permettere a non-owner di aggiornare l'indirizzo del PVPManager", async function () {
+            await expect(
+                dungeonManager.connect(addr1).updatePVPManagerAddress(addr2.address)
+            ).to.be.revertedWithCustomError(dungeonManager, "OwnableUnauthorizedAccount")
+            .withArgs(addr1.address);
+        });
+
+        it("Dovrebbe inizializzare correttamente i valori PVP in un nuovo party", async function () {
+            const party = await dungeonManager.dungeonParties(dungeonId, partyIndex);
+            expect(party.PVP_CHECK).to.be.false;
+            expect(party.PVP_STATUS).to.be.false;
+        });
+
+        it("Dovrebbe permettere di leggere lo stato PVP tramite i getter", async function () {
+            expect(await dungeonManager.getPvpCheck(dungeonId, partyIndex)).to.be.false;
+            expect(await dungeonManager.getPvpStatus(dungeonId, partyIndex)).to.be.false;
+
+            await dungeonManager.connect(pvpManagerSigner).pvpEngaged(dungeonId, partyIndex);
+            await dungeonManager.connect(pvpManagerSigner).pvpResults(dungeonId, partyIndex, true);
+
+            expect(await dungeonManager.getPvpCheck(dungeonId, partyIndex)).to.be.true;
+            expect(await dungeonManager.getPvpStatus(dungeonId, partyIndex)).to.be.true;
         });
     });
 }); 
