@@ -6,8 +6,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./test/mocks/VRFConsumerBaseV2Upgradeable.sol";
-import "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./libraries/GeneticsLib.sol";
@@ -15,7 +13,7 @@ import "./libraries/WhitelistLib.sol";
 import "./libraries/FactionClassLib.sol";
 import "./libraries/StatsLib.sol";
 import "./interfaces/IIdleProcioneBreeding.sol";
-
+import "./RandomnessConsumer.sol";
 
 /// @title IdleProcioneNFT
 /// @author Il tuo nome
@@ -26,7 +24,6 @@ contract IdleProcioneNFT is
     ERC721Upgradeable, 
     OwnableUpgradeable, 
     UUPSUpgradeable,
-    VRFConsumerBaseV2Upgradeable,
     ReentrancyGuardUpgradeable,
     PausableUpgradeable
 {
@@ -39,8 +36,6 @@ contract IdleProcioneNFT is
     // ========== Constants ==========
     uint256 private constant MAX_RANDOM_MINT = 6000;
     uint256 private constant MINT_PER_WALLET = 3;
-    uint32 private constant CALLBACK_GAS_LIMIT = 2500000;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
 
     // Requisiti per le professioni
     uint256 private constant MIN_LEVEL_FOR_PROFESSION = 5;
@@ -55,7 +50,6 @@ contract IdleProcioneNFT is
 
     // Storage
     mapping(uint256 => uint256) private _procioneData;
-    mapping(uint256 => address) private requestToSender;
     mapping(address => bool) public authorizedHealthModifiers;
 
     // Contratti autorizzati
@@ -64,11 +58,7 @@ contract IdleProcioneNFT is
     address public professionsContract;
     address public dungeonManager;
     uint256 public professionBaseStep;
-
-    // Chainlink VRF
-    VRFCoordinatorV2Interface private COORDINATOR;
-    bytes32 private keyHash;
-    uint64 private subscriptionId;
+    RandomnessConsumer public randomnessConsumer;
 
     // Stato
     bool public randomMintPaused;
@@ -96,6 +86,7 @@ contract IdleProcioneNFT is
     error InsufficientExp();
     error NotTokenOwner();
     error UnauthorizedDungeonManager();
+    error InvalidRandomness();
 
     // ========== Events ==========
     event DataUpdated(uint256 indexed tokenId, uint256 newData);
@@ -109,7 +100,6 @@ contract IdleProcioneNFT is
     event ProfessionSet(uint256 indexed tokenId, uint256 profession);
     event ProfessionLevelUp(uint256 indexed tokenId, uint256 newLevel);
     event ProfessionExpAdded(uint256 indexed tokenId, uint256 expAdded);
-    event RandomMintRequested(address indexed sender, uint256 requestId);
     event ProcioneMinted(
         uint256 indexed tokenId,
         address indexed owner,
@@ -127,6 +117,7 @@ contract IdleProcioneNFT is
     );
     event RandomMintPausedUpdated(bool paused);
     event EggContractUpdated(address indexed newContract);
+    event RandomnessConsumerUpdated(address indexed newConsumer);
 
     // ========== Constructor & Initializer ==========
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -139,20 +130,15 @@ contract IdleProcioneNFT is
         string memory symbol,
         uint256 _maxFacGen,
         uint256 _maxClassGen,
-        address _vrfCoordinator,
-        bytes32 _keyHash,
-        uint64 _subscriptionId
+        address _randomnessConsumer
     ) public initializer {
         __ERC721_init(name, symbol);
         __Ownable_init(msg.sender);
-        __VRFConsumerBaseV2_init(_vrfCoordinator);
         __ReentrancyGuard_init();
         __Pausable_init();
         __UUPSUpgradeable_init();
 
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        keyHash = _keyHash;
-        subscriptionId = _subscriptionId;
+        randomnessConsumer = RandomnessConsumer(_randomnessConsumer);
         professionBaseStep = 100;
 
         factionClassData.setMaxGenLimits(_maxFacGen, _maxClassGen);
@@ -161,22 +147,49 @@ contract IdleProcioneNFT is
     }
 
     // ========== Public Functions ==========
-    function randomMint() external payable whenNotPaused {
+    function randomMint(bytes calldata signature) external payable whenNotPaused {
         if (randomMintPaused) revert RandomMintPaused();
         if (_randomMintCount >= MAX_RANDOM_MINT) revert MaxRandomMintReached();
         if (!factionClassData.hasAvailableSlots()) revert NoSlotsAvailable();
         whitelistData.checkMintConditions(msg.sender, msg.value, MINT_PER_WALLET);
 
-        uint256 requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            CALLBACK_GAS_LIMIT,
-            1
+        // Ottieni il timestamp corrente
+        uint256 timestamp = block.timestamp;
+        
+        // Verifica e consuma il numero casuale firmato
+        uint256 randomNumber = randomnessConsumer.consumeRandomness(
+            uint256(keccak256(abi.encodePacked(msg.sender, timestamp, _randomMintCount))),
+            timestamp,
+            signature
         );
 
-        requestToSender[requestId] = msg.sender;
-        emit RandomMintRequested(msg.sender, requestId);
+        if (randomNumber == 0) revert InvalidRandomness();
+        
+        // Genera le caratteristiche del Procione
+        uint256 faction = uint256(FactionClassLib.generateValidFaction(randomNumber, 0, factionClassData));
+        uint256 class = uint256(FactionClassLib.generateValidClass(randomNumber, 0, factionClassData));
+        
+        unchecked {
+            factionClassData.factionCount[faction]++;
+            factionClassData.classCount[class]++;
+            factionClassData.facGen++;
+            factionClassData.classGen++;
+            _randomMintCount++;
+        }
+        
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
+        whitelistData.mintedPerWallet[msg.sender]++;
+
+        uint256 genetics = generateCompleteGenetics(randomNumber);
+        uint256 data = StatsLib.createInitialData();
+        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        _procioneData[tokenId] = data;
+        _safeMint(msg.sender, tokenId);
+
+        emit ProcioneMinted(tokenId, msg.sender, faction, class, genetics);
     }
 
     function mintFromEgg(
@@ -210,36 +223,6 @@ contract IdleProcioneNFT is
     }
 
     // ========== Internal Functions ==========
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
-        address sender = requestToSender[requestId];
-        uint256 randomNumber = randomWords[0];
-        
-        uint256 faction = uint256(FactionClassLib.generateValidFaction(randomNumber, 0, factionClassData));
-        uint256 class = uint256(FactionClassLib.generateValidClass(randomNumber, 0, factionClassData));
-        
-        unchecked {
-            factionClassData.factionCount[faction]++;
-            factionClassData.classCount[class]++;
-            factionClassData.facGen++;
-            factionClassData.classGen++;
-            _randomMintCount++;
-        }
-        
-        uint256 tokenId = _tokenIdCounter;
-        _tokenIdCounter++;
-        whitelistData.mintedPerWallet[sender]++;
-
-        uint256 genetics = generateCompleteGenetics(randomNumber);
-        uint256 data = StatsLib.createInitialData();
-        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
-        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
-        _procioneData[tokenId] = data;
-        _safeMint(sender, tokenId);
-
-        emit ProcioneMinted(tokenId, sender, faction, class, genetics);
-    }
-
     function generateCompleteGenetics(uint256 randomNumber) private returns (uint256 genetics) {
         uint256 mother;
         uint256 father;
@@ -385,6 +368,13 @@ contract IdleProcioneNFT is
     function rescueERC20(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         IERC20(token).transfer(owner(), amount);
+    }
+
+    function setRandomnessConsumer(address _newConsumer) external onlyOwner {
+        if (_newConsumer == address(0)) revert InvalidAddress();
+        address oldConsumer = address(randomnessConsumer);
+        randomnessConsumer = RandomnessConsumer(_newConsumer);
+        emit RandomnessConsumerUpdated(_newConsumer);
     }
 
     // ========== View Functions ==========

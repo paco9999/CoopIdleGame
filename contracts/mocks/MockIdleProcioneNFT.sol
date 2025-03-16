@@ -127,4 +127,48 @@ contract MockIdleProcioneNFT is ERC721 {
         _procioneData[tokenId] = data;
         return tokenId;
     }
+
+    function getProfessionInfo(uint256 tokenId) external view returns (StatsLib.Professions, uint256, uint256) {
+        require(_ownerOf(tokenId) != address(0), "Token non esistente");
+        uint256 data = _procioneData[tokenId];
+        return (
+            StatsLib.getProfession(data),
+            StatsLib.getProfessionLevel(data),
+            StatsLib.getProfessionExp(data)
+        );
+    }
+
+    function setProfession(uint256 tokenId, StatsLib.Professions profession) external {
+        require(_ownerOf(tokenId) != address(0), "Token non esistente");
+        uint256 data = _procioneData[tokenId];
+        data = StatsLib.setProfession(data, profession);
+        data = StatsLib.setProfessionLevel(data, 1); // Livello iniziale
+        data = StatsLib.setProfessionExp(data, 0); // XP iniziale
+        _procioneData[tokenId] = data;
+    }
+
+    // Funzioni di supporto per i test
+    function setLevel(uint256 data, uint256 level) external pure returns (uint256) {
+        return StatsLib.updateField(data, level, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
+    }
+
+    function setEggContract(address _eggContract) external {
+        // Mock function per i test
+    }
+
+    function setLevelUpContract(address _levelUpContract) external {
+        // Mock function per i test
+    }
+
+    function setWhitelistPhase1(address[] memory addresses, bool status) external {
+        // Mock function per i test
+    }
+
+    function setPhaseStatus(uint256 phase, bool status) external {
+        // Mock function per i test
+    }
+
+    function randomMint() external returns (uint256) {
+        return safeMint(msg.sender);
+    }
 } 

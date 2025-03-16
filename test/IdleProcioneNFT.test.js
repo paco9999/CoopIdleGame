@@ -11,32 +11,26 @@ describe("IdleProcioneNFT", function () {
     let addr1;
     let addr2;
     let addrs;
-    let vrfCoordinator;
-    let mockVRFCoordinator;
-    let mockLinkToken;
+    let randomnessConsumer;
     let mockOracle;
     let ReentrancyAttacker;
     let mockBreedingContract;
     let statsLibTest;
+    let signer;
 
     // Parametri per il deploy
     const NAME = "IdleProcioneNFT";
     const SYMBOL = "IPNFT";
     const MAX_FAC_GEN = 100;
     const MAX_CLASS_GEN = 100;
-    const VRF_COORDINATOR = "0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D";
-    const KEY_HASH = "0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15";
-    const SUBSCRIPTION_ID = 1;
 
     async function deployFixture() {
         const [_owner, _addr1, _addr2] = await ethers.getSigners();
         
-        // Deploy mock contracts
-        const MockVRFCoordinator = await ethers.getContractFactory("MockVRFCoordinatorV2");
-        const _mockVRFCoordinator = await MockVRFCoordinator.deploy();
-
-        const MockLinkToken = await ethers.getContractFactory("MockLinkToken");
-        const _mockLinkToken = await MockLinkToken.deploy();
+        // Deploy RandomnessConsumer
+        const RandomnessConsumer = await ethers.getContractFactory("RandomnessConsumer");
+        signer = ethers.Wallet.createRandom();
+        const _randomnessConsumer = await RandomnessConsumer.deploy(signer.address);
 
         // Deploy StatsLibTest
         const StatsLibTest = await ethers.getContractFactory("StatsLibTest");
@@ -49,9 +43,7 @@ describe("IdleProcioneNFT", function () {
             SYMBOL,
             MAX_FAC_GEN,
             MAX_CLASS_GEN,
-            await _mockVRFCoordinator.getAddress(),
-            ethers.keccak256(ethers.toUtf8Bytes("keyHash")),
-            1 // subscriptionId
+            await _randomnessConsumer.getAddress()
         ], {
             initializer: 'initialize',
             kind: 'uups'
@@ -61,10 +53,10 @@ describe("IdleProcioneNFT", function () {
             idleProcioneNFT: _idleProcioneNFT,
             owner: _owner, 
             addr1: _addr1, 
-            addr2: _addr2, 
-            mockVRFCoordinator: _mockVRFCoordinator, 
-            mockLinkToken: _mockLinkToken,
-            statsLibTest: _statsLibTest
+            addr2: _addr2,
+            randomnessConsumer: _randomnessConsumer,
+            statsLibTest: _statsLibTest,
+            signer: signer
         };
     }
 
@@ -86,12 +78,11 @@ describe("IdleProcioneNFT", function () {
         addr1 = fixture.addr1;
         addr2 = fixture.addr2;
         addrs = [];
-        vrfCoordinator = fixture.mockVRFCoordinator;
-        mockVRFCoordinator = fixture.mockVRFCoordinator;
-        mockLinkToken = fixture.mockLinkToken;
+        randomnessConsumer = fixture.randomnessConsumer;
         mockOracle = mockOracle;
         mockBreedingContract = mockBreedingContract;
         statsLibTest = fixture.statsLibTest;
+        signer = fixture.signer;
 
         ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");
     });
@@ -114,20 +105,50 @@ describe("IdleProcioneNFT", function () {
     });
 
     describe("Minting", function () {
+        // Funzione per generare una firma valida per il numero casuale
+        async function createValidSignature(sender, timestamp, mintCount) {
+            // Calcoliamo il requestId esattamente come nel contratto
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [sender, timestamp, mintCount]
+            );
+            
+            // Firmiamo il requestId con il timestamp
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            return signer.signMessage(ethers.getBytes(message));
+        }
+
         it("Should allow whitelisted addresses to mint in phase 1", async function () {
             await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
             await idleProcioneNFT.setPhaseStatus(1, true);
-            await idleProcioneNFT.connect(addr1).randomMint();
             
-            const requestId = await mockVRFCoordinator.getLastRequestId();
-            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await idleProcioneNFT.connect(addr1).randomMint(signature);
             
             expect(await idleProcioneNFT.ownerOf(0)).to.equal(addr1.address);
         });
 
         it("Should not allow non-whitelisted addresses to mint in phase 1", async function () {
             await idleProcioneNFT.setPhaseStatus(1, true);
-            await expect(idleProcioneNFT.connect(addr1).randomMint())
+            
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await expect(idleProcioneNFT.connect(addr1).randomMint(signature))
                 .to.be.revertedWithCustomError(idleProcioneNFT, "NotWhitelisted");
         });
 
@@ -136,7 +157,14 @@ describe("IdleProcioneNFT", function () {
             await idleProcioneNFT.setPhaseStatus(1, true);
             await idleProcioneNFT.setRandomMintPaused(true);
             
-            await expect(idleProcioneNFT.connect(addr1).randomMint())
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await expect(idleProcioneNFT.connect(addr1).randomMint(signature))
                 .to.be.revertedWithCustomError(idleProcioneNFT, "RandomMintPaused");
         });
 
@@ -147,15 +175,27 @@ describe("IdleProcioneNFT", function () {
             // Aumenta i limiti di generazione
             await idleProcioneNFT.setMaxGenLimits(10000, 10000);
             
+            let currentTime = await time.latest();
+            
             // Esegue 3 mint (il limite per wallet)
             for(let i = 0; i < 3; i++) {
-                await idleProcioneNFT.connect(addr1).randomMint();
-                const requestId = await mockVRFCoordinator.getLastRequestId();
-                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                currentTime += 100;
+                const timestamp = currentTime;
+                const mintCount = await idleProcioneNFT.getRandomMintCount();
+                const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+                
+                await time.increaseTo(timestamp - 1);
+                await idleProcioneNFT.connect(addr1).randomMint(signature);
             }
             
             // Il quarto mint dovrebbe fallire
-            await expect(idleProcioneNFT.connect(addr1).randomMint())
+            currentTime += 100;
+            const timestamp = currentTime;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await expect(idleProcioneNFT.connect(addr1).randomMint(signature))
                 .to.be.revertedWithCustomError(idleProcioneNFT, "WalletLimitReached");
         });
 
@@ -166,11 +206,17 @@ describe("IdleProcioneNFT", function () {
             // Aumenta i limiti di generazione
             await idleProcioneNFT.setMaxGenLimits(10000, 10000);
             
+            let currentTime = await time.latest();
+            
             // Esegue 3 mint (il limite per wallet)
             for(let i = 0; i < 3; i++) {
-                await idleProcioneNFT.connect(addr1).randomMint();
-                const requestId = await mockVRFCoordinator.getLastRequestId();
-                await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+                currentTime += 100;
+                const timestamp = currentTime;
+                const mintCount = await idleProcioneNFT.getRandomMintCount();
+                const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+                
+                await time.increaseTo(timestamp - 1);
+                await idleProcioneNFT.connect(addr1).randomMint(signature);
             }
             
             expect(await idleProcioneNFT.getRandomMintCount()).to.equal(3);
@@ -245,15 +291,21 @@ describe("IdleProcioneNFT", function () {
         });
 
         it("Should allow owner to rescue ERC20 tokens", async function () {
-            const amount = parseEther("100");
-            // Transfer tokens to the contract
-            await mockLinkToken.transfer(idleProcioneNFT.target, amount);
+            const MockToken = await ethers.getContractFactory("contracts/test/mocks/MockERC20.sol:MockERC20");
+            const mockToken = await MockToken.deploy("Mock Token", "MTK");
+            
+            // Mint tokens directly to the contract instead of transferring
+            await mockToken.mint(idleProcioneNFT.target, parseEther("100"));
+            
             // Get initial balance
-            const initialBalance = await mockLinkToken.balanceOf(owner.address);
+            const initialBalance = await mockToken.balanceOf(owner.address);
+            
             // Rescue tokens
-            await idleProcioneNFT.rescueERC20(mockLinkToken.target, amount);
+            const amount = parseEther("100");
+            await idleProcioneNFT.rescueERC20(mockToken.target, amount);
+            
             // Check final balance
-            const finalBalance = await mockLinkToken.balanceOf(owner.address);
+            const finalBalance = await mockToken.balanceOf(owner.address);
             expect(finalBalance - initialBalance).to.equal(amount);
         });
     });
@@ -283,6 +335,23 @@ describe("IdleProcioneNFT", function () {
     });
 
     describe("Security", function () {
+        // Funzione per generare una firma valida per il numero casuale
+        async function createValidSignature(sender, timestamp, mintCount) {
+            // Calcoliamo il requestId esattamente come nel contratto
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [sender, timestamp, mintCount]
+            );
+            
+            // Firmiamo il requestId con il timestamp
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            return signer.signMessage(ethers.getBytes(message));
+        }
+
         it("Should prevent reentrancy attacks", async function () {
             const ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");
             const attacker = await ReentrancyAttacker.deploy(idleProcioneNFT.target);
@@ -303,10 +372,15 @@ describe("IdleProcioneNFT", function () {
         it("Should prevent unauthorized updates to procione data", async function () {
             await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
             await idleProcioneNFT.setPhaseStatus(1, true);
-            await idleProcioneNFT.connect(addr1).randomMint();
             
-            const requestId = await mockVRFCoordinator.getLastRequestId();
-            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await idleProcioneNFT.connect(addr1).randomMint(signature);
             
             await expect(idleProcioneNFT.connect(addr1).updateProcioneData(0, 123))
                 .to.be.revertedWithCustomError(idleProcioneNFT, "UnauthorizedCaller");
@@ -317,6 +391,23 @@ describe("IdleProcioneNFT", function () {
         let tokenId;
         let authorizedContract;
 
+        // Funzione per generare una firma valida per il numero casuale
+        async function createValidSignature(sender, timestamp, mintCount) {
+            // Calcoliamo il requestId esattamente come nel contratto
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [sender, timestamp, mintCount]
+            );
+            
+            // Firmiamo il requestId con il timestamp
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            return signer.signMessage(ethers.getBytes(message));
+        }
+
         beforeEach(async function() {
             // Deploy un contratto mock autorizzato
             const MockAuthorizedContract = await ethers.getContractFactory("MockBreedingContract");
@@ -326,10 +417,16 @@ describe("IdleProcioneNFT", function () {
             // Mint un NFT per i test
             await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
             await idleProcioneNFT.setPhaseStatus(1, true);
-            await idleProcioneNFT.connect(addr1).randomMint();
             
-            const requestId = await mockVRFCoordinator.getLastRequestId();
-            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await idleProcioneNFT.connect(addr1).randomMint(signature);
+            
             tokenId = 0;
         });
 
@@ -442,6 +539,23 @@ describe("IdleProcioneNFT", function () {
         let tokenId;
         let mockDungeonManager;
 
+        // Funzione per generare una firma valida per il numero casuale
+        async function createValidSignature(sender, timestamp, mintCount) {
+            // Calcoliamo il requestId esattamente come nel contratto
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [sender, timestamp, mintCount]
+            );
+            
+            // Firmiamo il requestId con il timestamp
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            return signer.signMessage(ethers.getBytes(message));
+        }
+
         beforeEach(async function() {
             // Deploy un mock DungeonManager
             const MockDungeonManager = await ethers.getContractFactory("MockDungeonManager");
@@ -451,10 +565,16 @@ describe("IdleProcioneNFT", function () {
             // Mint un NFT per i test
             await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
             await idleProcioneNFT.setPhaseStatus(1, true);
-            await idleProcioneNFT.connect(addr1).randomMint();
             
-            const requestId = await mockVRFCoordinator.getLastRequestId();
-            await mockVRFCoordinator.fulfillRandomWordsWithDefaultValue(requestId);
+            // Incrementa il tempo per evitare conflitti di timestamp
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const signature = await createValidSignature(addr1.address, timestamp, mintCount);
+            
+            await time.increaseTo(timestamp - 1);
+            await idleProcioneNFT.connect(addr1).randomMint(signature);
+            
             tokenId = 0;
         });
 

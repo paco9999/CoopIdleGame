@@ -45,6 +45,12 @@ library FactionClassLib {
     /// @notice Evento emesso quando vengono aggiornati i limiti massimi
     event MaxGenLimitsUpdated(uint256 newMaxFactionGen, uint256 newMaxClassGen);
 
+    /// @notice Evento emesso quando viene generata una fazione valida
+    event FactionGenerated(Faction indexed faction);
+
+    /// @notice Evento emesso quando viene generata una classe valida
+    event ClassGenerated(Class indexed class_);
+
     // ========== Public Functions ==========
     /// @notice Imposta i limiti massimi di generazione per fazioni e classi
     /// @param data Struttura dei dati da aggiornare
@@ -69,10 +75,10 @@ library FactionClassLib {
     }
 
     /// @notice Genera una fazione valida
-    /// @param randomValue Numero random per la generazione
-    /// @param attempt Numero del tentativo
-    /// @param data Struttura dei dati per la validazione
-    /// @return Faction Fazione generata
+    /// @param randomValue Valore random
+    /// @param attempt Numero di tentativi
+    /// @param data Dati su fazioni e classi
+    /// @return Una fazione valida
     function generateValidFaction(
         uint256 randomValue,
         uint256 attempt,
@@ -106,6 +112,7 @@ library FactionClassLib {
             }
             data.factionCount[uint256(faction)]++;
             data.facGen++;
+            emit FactionGenerated(faction);
             return faction;
         }
 
@@ -116,10 +123,10 @@ library FactionClassLib {
     }
 
     /// @notice Genera una classe valida
-    /// @param randomValue Numero random per la generazione
-    /// @param attempt Numero del tentativo
-    /// @param data Struttura dei dati per la validazione
-    /// @return Class Classe generata
+    /// @param randomValue Valore random
+    /// @param attempt Numero di tentativi
+    /// @param data Dati su fazioni e classi
+    /// @return Una classe valida
     function generateValidClass(
         uint256 randomValue,
         uint256 attempt,
@@ -153,6 +160,7 @@ library FactionClassLib {
             }
             data.classCount[uint256(class_)]++;
             data.classGen++;
+            emit ClassGenerated(class_);
             return class_;
         }
 

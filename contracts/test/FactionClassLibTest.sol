@@ -13,6 +13,7 @@ contract FactionClassLibTest {
 
     event FactionGenerated(uint8 factionId);
     event ClassGenerated(uint8 classId);
+    event MaxGenLimitsUpdated(uint256 newMaxFactionGen, uint256 newMaxClassGen);
 
     // Espone i valori degli enum per i test
     function Faction_NONE() public pure returns (uint256) { return uint256(FactionClassLib.Faction.NONE); }
@@ -31,6 +32,7 @@ contract FactionClassLibTest {
     // Espone le funzioni della libreria
     function setMaxGenLimits(uint256 maxFactions, uint256 maxClasses) public {
         data.setMaxGenLimits(maxFactions, maxClasses);
+        emit MaxGenLimitsUpdated(maxFactions, maxClasses);
     }
 
     function generateValidFaction(bytes32 randomValue, uint256 attempt) public returns (uint256) {

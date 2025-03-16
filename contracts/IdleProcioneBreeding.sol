@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./libraries/StatsLib.sol";
 import "./libraries/GeneticsLib.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
+import "./RandomnessConsumer.sol";
 
 // ========== Interfaces ==========
 /// @notice Interfaccia per il contratto NFT dei Procioni
@@ -34,6 +35,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     IIdleProcioneEgg public immutable eggContract;
     IERC20 public immutable rewardToken;
     IERC20 public immutable govToken;
+    RandomnessConsumer public randomnessConsumer;
 
     // Configurazione
     address public treasuryAddress;
@@ -52,6 +54,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     error TransferFailed();
     error UnauthorizedBreeder();
     error SameParentNotAllowed();
+    error InvalidRandomness();
 
     // ========== Events ==========
     event BreedingInitiated(
@@ -63,6 +66,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     );
     event CostsUpdated(uint256 newBaseCost, uint256 newGovBaseCost);
     event TreasuryUpdated(address indexed newTreasury);
+    event RandomnessConsumerUpdated(address indexed newConsumer);
 
     // ========== Constructor ==========
     /// @notice Costruttore del contratto
@@ -71,6 +75,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     /// @param _rewardToken Indirizzo del token di reward
     /// @param _govToken Indirizzo del token di governance
     /// @param _treasury Indirizzo del treasury
+    /// @param _randomnessConsumer Indirizzo del contratto RandomnessConsumer
     /// @param _baseCost Costo base in reward token
     /// @param _govBaseCost Costo base in governance token
     constructor(
@@ -79,17 +84,19 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         address _rewardToken,
         address _govToken,
         address _treasury,
+        address _randomnessConsumer,
         uint256 _baseCost,
         uint256 _govBaseCost
     ) Ownable(msg.sender) {
         if (_nftContract == address(0) || _eggContract == address(0) || 
             _rewardToken == address(0) || _govToken == address(0) || 
-            _treasury == address(0)) revert InvalidAddress();
+            _treasury == address(0) || _randomnessConsumer == address(0)) revert InvalidAddress();
 
         nftContract = IIdleProcioneNFT(_nftContract);
         eggContract = IIdleProcioneEgg(_eggContract);
         rewardToken = IERC20(_rewardToken);
         govToken = IERC20(_govToken);
+        randomnessConsumer = RandomnessConsumer(_randomnessConsumer);
         treasuryAddress = _treasury;
         baseCost = _baseCost;
         govBaseCost = _govBaseCost;
@@ -99,12 +106,44 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     /// @notice Esegue il breeding di due procioni
     /// @param parent1Id ID del primo genitore
     /// @param parent2Id ID del secondo genitore
-    function breed(uint256 parent1Id, uint256 parent2Id) external nonReentrant whenNotPaused {
+    /// @param randomNumber Numero random
+    /// @param timestamp Timestamp
+    /// @param signature Firma
+    function breed(
+        uint256 parent1Id, 
+        uint256 parent2Id, 
+        uint256 randomNumber,
+        uint256 timestamp,
+        bytes calldata signature
+    ) external nonReentrant whenNotPaused {
         // Verifica che i token appartengano al chiamante
         if (nftContract.ownerOf(parent1Id) != msg.sender || 
             nftContract.ownerOf(parent2Id) != msg.sender) revert UnauthorizedBreeder();
         if (parent1Id == parent2Id) revert SameParentNotAllowed();
 
+        // Verifica e consuma la randomness
+        uint256 verifiedRandom = randomnessConsumer.consumeRandomness(
+            randomNumber,
+            timestamp,
+            signature
+        );
+        
+        if (verifiedRandom == 0) revert InvalidRandomness();
+
+        // Ottieni e verifica i dati dei genitori
+        _verifyAndUpdateParents(parent1Id, parent2Id);
+
+        // Incrementa il contatore di breed
+        unchecked {
+            breedCount[parent1Id]++;
+            breedCount[parent2Id]++;
+        }
+
+        // Crea l'uovo con la genetica combinata
+        _createEgg(parent1Id, parent2Id, verifiedRandom);
+    }
+
+    function _verifyAndUpdateParents(uint256 parent1Id, uint256 parent2Id) private {
         // Ottieni i dati dei genitori
         uint256 parent1Data = nftContract.getProcioneData(parent1Id);
         uint256 parent2Data = nftContract.getProcioneData(parent2Id);
@@ -124,15 +163,15 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         parent2Data = StatsLib.updateField(parent2Data, parent2Breeding - 1, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
         nftContract.updateProcioneData(parent1Id, parent1Data);
         nftContract.updateProcioneData(parent2Id, parent2Data);
+    }
 
-        // Incrementa il contatore di breed
-        unchecked {
-            breedCount[parent1Id]++;
-            breedCount[parent2Id]++;
-        }
-
+    function _createEgg(uint256 parent1Id, uint256 parent2Id, uint256 verifiedRandom) private {
+        // Ottieni i dati dei genitori per la genetica
+        uint256 parent1Data = nftContract.getProcioneData(parent1Id);
+        uint256 parent2Data = nftContract.getProcioneData(parent2Id);
+        
         // Genera la genetica per l'uovo
-        uint256 genetics = combineParentGenetics(parent1Data, parent2Data);
+        uint256 genetics = combineParentGenetics(parent1Data, parent2Data, verifiedRandom);
         
         // Crea l'uovo
         uint256 hatchTime = block.timestamp + INCUBATION_TIME;
@@ -145,8 +184,13 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
     /// @notice Combina la genetica dei genitori per l'uovo
     /// @param parent1Data Dati del primo genitore
     /// @param parent2Data Dati del secondo genitore
+    /// @param randomValue Valore random
     /// @return La genetica combinata
-    function combineParentGenetics(uint256 parent1Data, uint256 parent2Data) internal view returns (uint256) {
+    function combineParentGenetics(
+        uint256 parent1Data, 
+        uint256 parent2Data, 
+        uint256 randomValue
+    ) internal pure returns (uint256) {
         uint256 parent1Genetics = StatsLib.extractField(parent1Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
         uint256 parent2Genetics = StatsLib.extractField(parent2Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
         
@@ -157,12 +201,15 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
             uint256 motherPos = i * 12;
             uint256 fatherPos = motherPos + 6;
             
-            // 50% di probabilità di ereditare da ciascun genitore per ogni allele
-            uint256 mother = (block.timestamp % 2 == 0) ? 
+            // Utilizziamo diversi byte del randomValue per ogni parte
+            uint256 partRandomByte = (randomValue >> (i * 8)) & 0xFF;
+            
+            // Determina quale genitore contribuisce a ciascun allele
+            uint256 mother = (partRandomByte % 2 == 0) ? 
                 GeneticsLib.extractField(parent1Genetics, GeneticsLib.ALLELE_MASK, motherPos) :
                 GeneticsLib.extractField(parent2Genetics, GeneticsLib.ALLELE_MASK, motherPos);
                 
-            uint256 father = (block.timestamp % 2 == 0) ?
+            uint256 father = ((partRandomByte >> 4) % 2 == 0) ?
                 GeneticsLib.extractField(parent1Genetics, GeneticsLib.ALLELE_MASK, fatherPos) :
                 GeneticsLib.extractField(parent2Genetics, GeneticsLib.ALLELE_MASK, fatherPos);
             
@@ -189,6 +236,14 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         if (_newTreasury == address(0)) revert InvalidAddress();
         treasuryAddress = _newTreasury;
         emit TreasuryUpdated(_newTreasury);
+    }
+
+    /// @notice Aggiorna il contratto RandomnessConsumer
+    /// @param _newConsumer Nuovo indirizzo del contratto RandomnessConsumer
+    function setRandomnessConsumer(address _newConsumer) external onlyOwner {
+        if (_newConsumer == address(0)) revert InvalidAddress();
+        randomnessConsumer = RandomnessConsumer(_newConsumer);
+        emit RandomnessConsumerUpdated(_newConsumer);
     }
 
     /// @notice Mette in pausa il contratto

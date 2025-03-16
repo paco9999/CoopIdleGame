@@ -103,7 +103,7 @@ library GeneticsLib {
     }
 
     /// @notice Genera un tipo di carattere valido
-    /// @param randomValue Numero random per la generazione
+    /// @param randomValue Numero random verificato
     /// @param attempt Numero del tentativo
     /// @param counts Contatori dei tratti
     /// @return Tipo di carattere generato

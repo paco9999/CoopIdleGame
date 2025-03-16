@@ -65,28 +65,38 @@ describe("FactionClassLib", function() {
       it("Dovrebbe generare una fazione valida", async function() {
         const randomValue = ethers.hexlify(ethers.randomBytes(32));
         const attempt = 0;
-        const tx = await factionClassLibTest.generateValidFaction(randomValue, attempt);
-        const receipt = await tx.wait();
-        const event = receipt.logs[0];
-        const factionId = event.args[0];
-        expect(Number(factionId)).to.be.gte(1);
-        expect(Number(factionId)).to.be.lte(4);
-      });
-
-      it("Dovrebbe incrementare il contatore di fazioni", async function() {
-        const randomValue = ethers.hexlify(ethers.randomBytes(32));
-        const attempt = 0;
+        
+        // Esegui la transazione e verifica che non fallisca
         await factionClassLibTest.generateValidFaction(randomValue, attempt);
-        const facGen = await factionClassLibTest.getFactionGenCount();
-        expect(Number(facGen)).to.equal(1);
+        
+        // Verifica che il contatore sia incrementato
+        const count = await factionClassLibTest.getFactionGenCount();
+        expect(count).to.equal(1);
+        
+        // Verifica che almeno una fazione abbia un conteggio > 0
+        let hasPositiveCount = false;
+        for (let i = 1; i <= 4; i++) {
+          const factionCount = await factionClassLibTest.getFactionCount(i);
+          if (factionCount > 0) {
+            hasPositiveCount = true;
+            break;
+          }
+        }
+        expect(hasPositiveCount).to.be.true;
       });
 
       it("Dovrebbe fallire se raggiunto limite fazioni", async function() {
+        // Imposta un limite basso per il test
         await factionClassLibTest.setMaxGenLimits(1, 2000);
+        
+        // Genera una fazione
         const randomValue = ethers.hexlify(ethers.randomBytes(32));
         await factionClassLibTest.generateValidFaction(randomValue, 0);
+        
+        // Prova a generare un'altra fazione oltre il limite
+        const randomValue2 = ethers.hexlify(ethers.randomBytes(32));
         await expect(
-          factionClassLibTest.generateValidFaction(randomValue, 1)
+          factionClassLibTest.generateValidFaction(randomValue2, 1)
         ).to.be.revertedWith("Limite fazioni raggiunto");
       });
     });
@@ -95,28 +105,38 @@ describe("FactionClassLib", function() {
       it("Dovrebbe generare una classe valida", async function() {
         const randomValue = ethers.hexlify(ethers.randomBytes(32));
         const attempt = 0;
-        const tx = await factionClassLibTest.generateValidClass(randomValue, attempt);
-        const receipt = await tx.wait();
-        const event = receipt.logs[0];
-        const classId = event.args[0];
-        expect(Number(classId)).to.be.gte(1);
-        expect(Number(classId)).to.be.lte(5);
-      });
-
-      it("Dovrebbe incrementare il contatore di classi", async function() {
-        const randomValue = ethers.hexlify(ethers.randomBytes(32));
-        const attempt = 0;
+        
+        // Esegui la transazione e verifica che non fallisca
         await factionClassLibTest.generateValidClass(randomValue, attempt);
-        const classGen = await factionClassLibTest.getClassGenCount();
-        expect(Number(classGen)).to.equal(1);
+        
+        // Verifica che il contatore sia incrementato
+        const count = await factionClassLibTest.getClassGenCount();
+        expect(count).to.equal(1);
+        
+        // Verifica che almeno una classe abbia un conteggio > 0
+        let hasPositiveCount = false;
+        for (let i = 1; i <= 5; i++) {
+          const classCount = await factionClassLibTest.getClassCount(i);
+          if (classCount > 0) {
+            hasPositiveCount = true;
+            break;
+          }
+        }
+        expect(hasPositiveCount).to.be.true;
       });
 
       it("Dovrebbe fallire se raggiunto limite classi", async function() {
-        await factionClassLibTest.setMaxGenLimits(1000, 1);
+        // Imposta un limite basso per il test
+        await factionClassLibTest.setMaxGenLimits(2000, 1);
+        
+        // Genera una classe
         const randomValue = ethers.hexlify(ethers.randomBytes(32));
         await factionClassLibTest.generateValidClass(randomValue, 0);
+        
+        // Prova a generare un'altra classe oltre il limite
+        const randomValue2 = ethers.hexlify(ethers.randomBytes(32));
         await expect(
-          factionClassLibTest.generateValidClass(randomValue, 1)
+          factionClassLibTest.generateValidClass(randomValue2, 1)
         ).to.be.revertedWith("Limite classi raggiunto");
       });
     });

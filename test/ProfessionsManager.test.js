@@ -18,46 +18,45 @@ describe("ProfessionsManager", function () {
     let mockCraftedItemNFT;
 
     async function deployFixture() {
-        const [_owner, _addr1, _addr2] = await ethers.getSigners();
-
-        // Deploy mock VRF coordinator
-        const MockVRFCoordinator = await ethers.getContractFactory("MockVRFCoordinatorV2");
-        const _mockVRFCoordinator = await MockVRFCoordinator.deploy();
-
-        // Deploy IdleProcioneNFT
-        const IdleProcioneNFTFactory = await ethers.getContractFactory("IdleProcioneNFT");
-        const _idleProcioneNFT = await upgrades.deployProxy(IdleProcioneNFTFactory, [
-            "IdleProcioneNFT",
-            "IPNFT",
-            100,
-            100,
-            await _mockVRFCoordinator.getAddress(),
-            ethers.keccak256(ethers.toUtf8Bytes("keyHash")),
-            1
-        ], {
-            initializer: 'initialize',
-            kind: 'uups'
-        });
-
+        const [owner, user1, user2] = await ethers.getSigners();
+        
+        // Deploy MockERC20 for COM token
+        const MockERC20 = await ethers.getContractFactory("contracts/test/mocks/MockERC20.sol:MockERC20");
+        const mockCOM = await MockERC20.deploy("Community Token", "COM");
+        await mockCOM.waitForDeployment();
+        
+        // Deploy MockIdleProcioneNFT
+        const MockIdleProcioneNFT = await ethers.getContractFactory("MockIdleProcioneNFT");
+        const mockNFT = await MockIdleProcioneNFT.deploy();
+        await mockNFT.waitForDeployment();
+        
         // Deploy ProfessionsManager
-        const ProfessionsManagerFactory = await ethers.getContractFactory("ProfessionsManager");
-        const _professionsManager = await upgrades.deployProxy(ProfessionsManagerFactory, [
-            await _idleProcioneNFT.getAddress()
-        ], {
-            initializer: 'initialize',
-            kind: 'uups'
-        });
-
-        // Set ProfessionsManager in IdleProcioneNFT
-        await _idleProcioneNFT.setProfessionsContract(await _professionsManager.getAddress());
-
+        const ProfessionsManager = await ethers.getContractFactory("ProfessionsManager");
+        const profManager = await upgrades.deployProxy(ProfessionsManager, [
+            await mockNFT.getAddress()
+        ]);
+        await profManager.waitForDeployment();
+        
+        // Imposta manualmente i valori che sarebbero stati impostati nel costruttore
+        await profManager.setCraftingManager(owner.address);
+        await profManager.setMedicManager(owner.address);
+        await profManager.setThiefManager(owner.address);
+        await profManager.setGathererManager(owner.address);
+        await profManager.setPaladinManager(owner.address);
+        
+        // Deploy del mock VRFCoordinator
+        const MockVRFCoordinator = await ethers.getContractFactory("contracts/test/mocks/MockVRFCoordinator.sol:MockVRFCoordinator");
+        const mockVRFCoordinator = await MockVRFCoordinator.deploy();
+        await mockVRFCoordinator.waitForDeployment();
+        
         return {
-            idleProcioneNFT: _idleProcioneNFT,
-            professionsManager: _professionsManager,
-            mockVRFCoordinator: _mockVRFCoordinator,
-            owner: _owner,
-            addr1: _addr1,
-            addr2: _addr2
+            profManager,
+            mockNFT,
+            mockCOM,
+            mockVRFCoordinator,
+            owner,
+            user1,
+            user2
         };
     }
 
@@ -65,10 +64,10 @@ describe("ProfessionsManager", function () {
         const fixture = await loadFixture(deployFixture);
         
         // Deploy mock breeding contract
-        const MockBreedingContract = await ethers.getContractFactory("MockBreedingContract");
+        const MockBreedingContract = await ethers.getContractFactory("contracts/test/mocks/MockBreedingContract.sol:MockBreedingContract");
         mockBreedingContract = await MockBreedingContract.deploy();
 
-        const MockCraftedItemNFT = await ethers.getContractFactory("MockCraftedItemNFT");
+        const MockCraftedItemNFT = await ethers.getContractFactory("contracts/mocks/MockCraftedItemNFT.sol:MockCraftedItemNFT");
         mockCraftedItemNFT = await MockCraftedItemNFT.deploy();
 
         // Deploy del mock CraftingManager
@@ -76,24 +75,24 @@ describe("ProfessionsManager", function () {
         mockCraftingManager = await MockCraftingManager.deploy();
 
         // Assegna i valori alle variabili globali
-        IdleProcioneNFT = fixture.idleProcioneNFT;
-        idleProcioneNFT = fixture.idleProcioneNFT;
-        ProfessionsManager = fixture.professionsManager;
-        professionsManager = fixture.professionsManager;
+        IdleProcioneNFT = fixture.mockNFT;
+        idleProcioneNFT = fixture.mockNFT;
+        ProfessionsManager = fixture.profManager;
+        professionsManager = fixture.profManager;
         mockVRFCoordinator = fixture.mockVRFCoordinator;
         owner = fixture.owner;
-        addr1 = fixture.addr1;
-        addr2 = fixture.addr2;
+        addr1 = fixture.user1;
+        addr2 = fixture.user2;
         addrs = [];
 
         // Setup del contratto di breeding
-        await idleProcioneNFT.setEggContract(mockBreedingContract.target);
+        await idleProcioneNFT.setEggContract(await mockBreedingContract.getAddress());
         await idleProcioneNFT.setLevelUpContract(owner.address);
     });
 
     describe("Deployment", function () {
         it("Dovrebbe impostare correttamente il contratto NFT", async function () {
-            expect(await professionsManager.nftContract()).to.equal(idleProcioneNFT.target);
+            expect(await professionsManager.nftContract()).to.equal(await idleProcioneNFT.getAddress());
         });
 
         it("Dovrebbe impostare il limite di default per le professioni", async function () {
@@ -1154,9 +1153,17 @@ describe("ProfessionsManager", function () {
         });
 
         it("Dovrebbe permettere all'owner di impostare il CraftingManager", async function () {
-            await expect(professionsManager.setCraftingManager(mockCraftingManager.target))
+            // Ottieni il valore attuale del CraftingManager
+            const currentCraftingManager = await professionsManager.craftingManager();
+            
+            // Imposta un nuovo CraftingManager
+            const newCraftingManager = await mockCraftingManager.getAddress();
+            await expect(professionsManager.setCraftingManager(newCraftingManager))
                 .to.emit(professionsManager, "CraftingManagerUpdated")
-                .withArgs(ethers.ZeroAddress, mockCraftingManager.target);
+                .withArgs(currentCraftingManager, newCraftingManager);
+                
+            // Verifica che il CraftingManager sia stato aggiornato
+            expect(await professionsManager.craftingManager()).to.equal(newCraftingManager);
         });
 
         it("Non dovrebbe permettere a non-owner di chiamare funzioni admin", async function () {

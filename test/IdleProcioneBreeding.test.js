@@ -16,6 +16,8 @@ describe("IdleProcioneBreeding", function () {
     let rewardToken;
     let GovToken;
     let govToken;
+    let RandomnessConsumer;
+    let randomnessConsumer;
     let owner;
     let addr1;
     let addr2;
@@ -36,6 +38,15 @@ describe("IdleProcioneBreeding", function () {
         return (slots << BigInt(80)) | genetics;
     }
 
+    async function signRandomNumber(signer, randomNumber, timestamp) {
+        const message = ethers.solidityPackedKeccak256(
+            ["uint256", "uint256"],
+            [randomNumber, timestamp]
+        );
+        const signature = await signer.signMessage(ethers.getBytes(message));
+        return signature;
+    }
+
     beforeEach(async function () {
         [owner, addr1, addr2, treasury, ...addrs] = await ethers.getSigners();
 
@@ -51,6 +62,10 @@ describe("IdleProcioneBreeding", function () {
         MockIdleProcioneEgg = await ethers.getContractFactory("contracts/test/mocks/MockIdleProcioneEgg.sol:MockIdleProcioneEgg");
         mockIdleProcioneEgg = await MockIdleProcioneEgg.deploy();
 
+        // Deploy di RandomnessConsumer
+        RandomnessConsumer = await ethers.getContractFactory("RandomnessConsumer");
+        randomnessConsumer = await RandomnessConsumer.deploy(owner.address);
+
         // Deploy del contratto principale
         IdleProcioneBreeding = await ethers.getContractFactory("IdleProcioneBreeding");
         idleProcioneBreeding = await IdleProcioneBreeding.deploy(
@@ -59,6 +74,7 @@ describe("IdleProcioneBreeding", function () {
             await rewardToken.getAddress(),
             await govToken.getAddress(),
             treasury.address,
+            await randomnessConsumer.getAddress(),
             BASE_COST,
             GOV_BASE_COST
         );
@@ -90,6 +106,7 @@ describe("IdleProcioneBreeding", function () {
             expect(await idleProcioneBreeding.rewardToken()).to.equal(await rewardToken.getAddress());
             expect(await idleProcioneBreeding.govToken()).to.equal(await govToken.getAddress());
             expect(await idleProcioneBreeding.treasuryAddress()).to.equal(treasury.address);
+            expect(await idleProcioneBreeding.randomnessConsumer()).to.equal(await randomnessConsumer.getAddress());
             expect(await idleProcioneBreeding.baseCost()).to.equal(BASE_COST);
             expect(await idleProcioneBreeding.govBaseCost()).to.equal(GOV_BASE_COST);
         });
@@ -102,6 +119,7 @@ describe("IdleProcioneBreeding", function () {
                     await rewardToken.getAddress(),
                     await govToken.getAddress(),
                     treasury.address,
+                    await randomnessConsumer.getAddress(),
                     BASE_COST,
                     GOV_BASE_COST
                 )
@@ -111,7 +129,17 @@ describe("IdleProcioneBreeding", function () {
 
     describe("Breeding", function () {
         it("Dovrebbe permettere il breeding tra due Procioni", async function () {
-            const tx = await idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2);
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
+            const tx = await idleProcioneBreeding.connect(addr1).breed(
+                tokenId1, 
+                tokenId2,
+                randomNumber,
+                currentTime,
+                signature
+            );
             const receipt = await tx.wait();
             
             // Verifica l'evento
@@ -130,14 +158,34 @@ describe("IdleProcioneBreeding", function () {
         });
 
         it("Non dovrebbe permettere il breeding con lo stesso Procione", async function () {
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
             await expect(
-                idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId1)
+                idleProcioneBreeding.connect(addr1).breed(
+                    tokenId1, 
+                    tokenId1,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
             ).to.be.revertedWithCustomError(idleProcioneBreeding, "SameParentNotAllowed");
         });
 
         it("Non dovrebbe permettere il breeding con Procioni non posseduti", async function () {
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
             await expect(
-                idleProcioneBreeding.connect(addr2).breed(tokenId1, tokenId2)
+                idleProcioneBreeding.connect(addr2).breed(
+                    tokenId1, 
+                    tokenId2,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
             ).to.be.revertedWithCustomError(idleProcioneBreeding, "UnauthorizedBreeder");
         });
 
@@ -146,13 +194,49 @@ describe("IdleProcioneBreeding", function () {
             const noSlotsData = await createInitialData(0);
             await mockIdleProcioneNFT.updateProcioneData(tokenId1, noSlotsData);
             
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
             await expect(
-                idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2)
+                idleProcioneBreeding.connect(addr1).breed(
+                    tokenId1, 
+                    tokenId2,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
             ).to.be.revertedWithCustomError(idleProcioneBreeding, "InsufficientBreedingSlots");
         });
 
+        it("Non dovrebbe permettere il breeding con una firma invalida", async function () {
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(addr1, randomNumber, currentTime); // Firma con un signer non autorizzato
+
+            await expect(
+                idleProcioneBreeding.connect(addr1).breed(
+                    tokenId1, 
+                    tokenId2,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
+            ).to.be.revertedWithCustomError(randomnessConsumer, "InvalidSignature");
+        });
+
         it("Dovrebbe aggiornare correttamente i breeding slots dopo il breeding", async function () {
-            await idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2);
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
+            await idleProcioneBreeding.connect(addr1).breed(
+                tokenId1, 
+                tokenId2,
+                randomNumber,
+                currentTime,
+                signature
+            );
             
             const data1 = await mockIdleProcioneNFT.getProcioneData(tokenId1);
             const data2 = await mockIdleProcioneNFT.getProcioneData(tokenId2);
@@ -192,19 +276,52 @@ describe("IdleProcioneBreeding", function () {
                 .to.be.revertedWithCustomError(idleProcioneBreeding, "InvalidAddress");
         });
 
+        it("Dovrebbe permettere all'owner di aggiornare il RandomnessConsumer", async function () {
+            const newRandomnessConsumer = await RandomnessConsumer.deploy(owner.address);
+            
+            await expect(idleProcioneBreeding.setRandomnessConsumer(await newRandomnessConsumer.getAddress()))
+                .to.emit(idleProcioneBreeding, "RandomnessConsumerUpdated")
+                .withArgs(await newRandomnessConsumer.getAddress());
+
+            expect(await idleProcioneBreeding.randomnessConsumer()).to.equal(await newRandomnessConsumer.getAddress());
+        });
+
+        it("Non dovrebbe permettere di impostare un RandomnessConsumer address zero", async function () {
+            await expect(idleProcioneBreeding.setRandomnessConsumer(ethers.ZeroAddress))
+                .to.be.revertedWithCustomError(idleProcioneBreeding, "InvalidAddress");
+        });
+
         it("Dovrebbe permettere all'owner di mettere in pausa e riprendere il contratto", async function () {
             await idleProcioneBreeding.pause();
             expect(await idleProcioneBreeding.paused()).to.be.true;
 
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
             await expect(
-                idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2)
+                idleProcioneBreeding.connect(addr1).breed(
+                    tokenId1, 
+                    tokenId2,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
             ).to.be.reverted;
 
             await idleProcioneBreeding.unpause();
             expect(await idleProcioneBreeding.paused()).to.be.false;
 
             // Verifica che il breeding funzioni dopo l'unpause
-            await expect(idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2)).to.not.be.reverted;
+            await expect(
+                idleProcioneBreeding.connect(addr1).breed(
+                    tokenId1, 
+                    tokenId2,
+                    randomNumber,
+                    currentTime,
+                    signature
+                )
+            ).to.not.be.reverted;
         });
     });
 
@@ -212,7 +329,17 @@ describe("IdleProcioneBreeding", function () {
         it("Dovrebbe tracciare correttamente il numero di breed", async function () {
             expect(await idleProcioneBreeding.getBreedCount(tokenId1)).to.equal(0);
             
-            await idleProcioneBreeding.connect(addr1).breed(tokenId1, tokenId2);
+            const currentTime = await time.latest();
+            const randomNumber = ethers.toBigInt("0x" + "1".repeat(64));
+            const signature = await signRandomNumber(owner, randomNumber, currentTime);
+
+            await idleProcioneBreeding.connect(addr1).breed(
+                tokenId1, 
+                tokenId2,
+                randomNumber,
+                currentTime,
+                signature
+            );
             
             expect(await idleProcioneBreeding.getBreedCount(tokenId1)).to.equal(1);
             expect(await idleProcioneBreeding.getBreedCount(tokenId2)).to.equal(1);
