@@ -190,7 +190,7 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         uint256 parent1Data, 
         uint256 parent2Data, 
         uint256 randomValue
-    ) internal pure returns (uint256) {
+    ) internal returns (uint256) {
         uint256 parent1Genetics = StatsLib.extractField(parent1Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
         uint256 parent2Genetics = StatsLib.extractField(parent2Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
         
@@ -216,6 +216,9 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
             newGenetics = StatsLib.updateField(newGenetics, mother, GeneticsLib.ALLELE_MASK, motherPos);
             newGenetics = StatsLib.updateField(newGenetics, father, GeneticsLib.ALLELE_MASK, fatherPos);
         }
+        
+        // Applica potenziali mutazioni genetiche
+        newGenetics = GeneticsLib.applyMutation(newGenetics, randomValue);
         
         return newGenetics;
     }

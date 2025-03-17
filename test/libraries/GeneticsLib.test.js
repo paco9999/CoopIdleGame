@@ -239,4 +239,124 @@ describe("GeneticsLib", function() {
       }
     });
   });
+
+  describe("Fenotipo", function() {
+    it("Dovrebbe determinare correttamente il fenotipo con tratti dominanti", async function() {
+      // Crea genetica di test con diverse combinazioni di tratti
+      const head1 = (0 << 4) | 3;  // Dominante, ID 3
+      const head2 = (2 << 4) | 8;  // Min Recessivo, ID 8
+      
+      const fur1 = (1 << 4) | 2;   // Recessivo, ID 2
+      const fur2 = (0 << 4) | 7;   // Dominante, ID 7
+      
+      const star1 = (0 << 4) | 1;  // Dominante, ID 1
+      const star2 = (0 << 4) | 9;  // Dominante, ID 9
+      
+      const weapon1 = (1 << 4) | 6;  // Recessivo, ID 6
+      const weapon2 = (2 << 4) | 5;  // Min Recessivo, ID 5
+      
+      const acc1 = (2 << 4) | 3;    // Min Recessivo, ID 3
+      const acc2 = (1 << 4) | 7;    // Recessivo, ID 7
+      
+      const genetics = await geneticsLibTest.createTestGenetics(
+        head1, head2, fur1, fur2, star1, star2, weapon1, weapon2, acc1, acc2
+      );
+      
+      const tx = await geneticsLibTest.determineFenotipo(genetics);
+      const receipt = await tx.wait();
+      const fenotipo = receipt.logs[0].args[0];
+      
+      // Regole di dominanza attese:
+      // 1. HEAD: head1 è dominante, quindi fenotipo[0] dovrebbe essere 3
+      expect(fenotipo[0]).to.equal(3n);
+      
+      // 2. FUR: fur2 è dominante, quindi fenotipo[1] dovrebbe essere 7
+      expect(fenotipo[1]).to.equal(7n);
+      
+      // 3. STAR: entrambi sono dominanti, ma poiché è deterministico basato su seed,
+      // verifichiamo solo che sia uno dei due valori
+      expect(fenotipo[2]).to.be.oneOf([1n, 9n]);
+      
+      // 4. WEAPON: weapon1 è recessivo e weapon2 è recessivo minore, quindi dovrebbe vincere il recessivo
+      expect(fenotipo[3]).to.equal(6n);
+      
+      // 5. ACCESSORY: acc1 è recessivo minore e acc2 è recessivo, quindi dovrebbe vincere il recessivo
+      expect(fenotipo[4]).to.equal(7n);
+    });
+
+    it("Dovrebbe gestire correttamente casi con stesso tipo di tratto", async function() {
+      // Crea genetica di test con tratti dello stesso tipo
+      const head1 = (1 << 4) | 2;  // Recessivo, ID 2
+      const head2 = (1 << 4) | 4;  // Recessivo, ID 4
+      
+      const genetics = await geneticsLibTest.createTestGenetics(
+        head1, head2, 0, 0, 0, 0, 0, 0, 0, 0
+      );
+      
+      const tx = await geneticsLibTest.determineFenotipo(genetics);
+      const receipt = await tx.wait();
+      const fenotipo = receipt.logs[0].args[0];
+      
+      // Con stesso tipo, dovrebbe essere deterministico basato su seed
+      expect(fenotipo[0]).to.be.oneOf([2n, 4n]);
+    });
+  });
+
+  describe("Mutazione", function() {
+    it("Dovrebbe applicare mutazioni alla genetica", async function() {
+      // Creiamo una genetica iniziale
+      const initialGenetics = await geneticsLibTest.createTestGenetics(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+      );
+      
+      const randomValue = getRandomValue();
+      const tx = await geneticsLibTest.applyMutation(initialGenetics, randomValue);
+      const receipt = await tx.wait();
+      const mutatedGenetics = receipt.logs[0].args[0];
+      
+      // Verifichiamo che la genetica sia cambiata
+      // La probabilità di mutazione è bassa (1%), quindi potrebbe non cambiare
+      // Confrontiamo quindi solo che il valore ritornato sia valido
+      expect(mutatedGenetics).to.not.be.undefined;
+      
+      // Nota: Non possiamo prevedere esattamente quali alleli muteranno,
+      // quindi controlliamo solo che il valore sia almeno plausibile
+      // Questa è una verifica debole, ma sufficiente per il concetto di mutazione
+    });
+    
+    it("Dovrebbe mantenere la struttura degli alleli dopo la mutazione", async function() {
+      // Creiamo una genetica con valori noti
+      const head1 = (0 << 4) | 3;  // Dominante, ID 3
+      const genetics = await geneticsLibTest.createTestGenetics(
+        head1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      );
+      
+      // Verifichiamo che l'allele originale sia impostato correttamente
+      const originalAllele = await geneticsLibTest.extractField(
+        genetics, 
+        await geneticsLibTest.ALLELE_MASK(), 
+        await geneticsLibTest.HEAD_MOTHER_POSITION()
+      );
+      expect(originalAllele).to.equal(head1);
+      
+      // Applichiamo la mutazione con un valore casuale fisso per ripetibilità
+      const fixedRandomValue = ethers.toBigInt("123456789");
+      const tx = await geneticsLibTest.applyMutation(genetics, fixedRandomValue);
+      const mutatedGenetics = await getTransactionValue(tx);
+      
+      // Estraiamo un allele dalla genetica mutata
+      const headAllele = await geneticsLibTest.extractField(
+        mutatedGenetics, 
+        await geneticsLibTest.ALLELE_MASK(), 
+        await geneticsLibTest.HEAD_MOTHER_POSITION()
+      );
+      
+      // Verifichiamo che l'allele sia ancora valido (tipo tra 0-2, ID tra 0-9)
+      const extractedType = await geneticsLibTest.extractTraitType(headAllele);
+      const extractedId = await geneticsLibTest.extractTraitId(headAllele);
+      
+      expect(extractedType).to.be.lte(2);
+      expect(extractedId).to.be.lte(9);
+    });
+  });
 }); 

@@ -65,7 +65,7 @@ describe("ProfessionsManager", function () {
         
         // Deploy mock breeding contract
         const MockBreedingContract = await ethers.getContractFactory("contracts/test/mocks/MockBreedingContract.sol:MockBreedingContract");
-        mockBreedingContract = await MockBreedingContract.deploy();
+        mockBreedingContract = await MockBreedingContract.deploy(await fixture.mockNFT.getAddress());
 
         const MockCraftedItemNFT = await ethers.getContractFactory("contracts/mocks/MockCraftedItemNFT.sol:MockCraftedItemNFT");
         mockCraftedItemNFT = await MockCraftedItemNFT.deploy();

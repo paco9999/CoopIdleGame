@@ -13,6 +13,10 @@ contract GeneticsLibTest {
     // Strutture dati per i test
     GeneticsLib.TraitCounts public counts;
     GeneticsLib.TraitLimits internal limits;
+    
+    // Evento per mutation
+    event MutationApplied(uint256 genetics);
+    event FenotipoGenerated(uint256[5] fenotipo);
 
     constructor() {
         GeneticsLib.initializeTraitLimits(limits);
@@ -95,6 +99,43 @@ contract GeneticsLibTest {
 
     function initializeTraitLimits() public {
         GeneticsLib.initializeTraitLimits(limits);
+    }
+    
+    // Nuove funzioni per testare il fenotipo e la mutazione
+    function determineFenotipo(uint256 genetics) public returns (uint256[5] memory) {
+        uint256[5] memory fenotipo = GeneticsLib.determineFenotipo(genetics);
+        emit FenotipoGenerated(fenotipo);
+        return fenotipo;
+    }
+    
+    function applyMutation(uint256 genetics, uint256 randomValue) public returns (uint256) {
+        uint256 mutatedGenetics = GeneticsLib.applyMutation(genetics, randomValue);
+        emit MutationApplied(mutatedGenetics);
+        return mutatedGenetics;
+    }
+    
+    // Funzione helper per creare una genetica di test controllata
+    function createTestGenetics(
+        uint256 head1, uint256 head2,
+        uint256 fur1, uint256 fur2,
+        uint256 star1, uint256 star2,
+        uint256 weapon1, uint256 weapon2,
+        uint256 acc1, uint256 acc2
+    ) public pure returns (uint256) {
+        uint256 genetics = 0;
+        
+        genetics = GeneticsLib.updateField(genetics, head1, GeneticsLib.ALLELE_MASK, GeneticsLib.HEAD_MOTHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, head2, GeneticsLib.ALLELE_MASK, GeneticsLib.HEAD_FATHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, fur1, GeneticsLib.ALLELE_MASK, GeneticsLib.FUR_MOTHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, fur2, GeneticsLib.ALLELE_MASK, GeneticsLib.FUR_FATHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, star1, GeneticsLib.ALLELE_MASK, GeneticsLib.STAR_MOTHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, star2, GeneticsLib.ALLELE_MASK, GeneticsLib.STAR_FATHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, weapon1, GeneticsLib.ALLELE_MASK, GeneticsLib.WEAPON_MOTHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, weapon2, GeneticsLib.ALLELE_MASK, GeneticsLib.WEAPON_FATHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, acc1, GeneticsLib.ALLELE_MASK, GeneticsLib.ACC_MOTHER_POSITION);
+        genetics = GeneticsLib.updateField(genetics, acc2, GeneticsLib.ALLELE_MASK, GeneticsLib.ACC_FATHER_POSITION);
+        
+        return genetics;
     }
 
     // Funzioni di utilità per i test

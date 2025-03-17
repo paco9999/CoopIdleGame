@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "../../interfaces/IIdleProcioneBreeding.sol";
 import "../../interfaces/IIdleProcioneNFT.sol";
+import "../../libraries/GeneticsLib.sol";
 
 /// @title MockBreedingContract
 /// @notice Contratto mock per i test del breeding
@@ -11,6 +12,11 @@ contract MockBreedingContract is IIdleProcioneBreeding {
     uint256 public constant BASE_COST = 100 ether;
     uint256 public constant GOV_COST = 10 ether;
     bool private canBreedValue = true;
+    address public idleProcioneNFT;
+
+    constructor(address _nftContract) {
+        idleProcioneNFT = _nftContract;
+    }
 
     /// @notice Imposta il numero di breeding per un token
     /// @param tokenId ID del token
@@ -81,5 +87,69 @@ contract MockBreedingContract is IIdleProcioneBreeding {
     /// @param isAddition True se aggiungere salute, False se sottrarre
     function modifyHealth(address nftContract, uint256 tokenId, uint256 amount, bool isAddition) external {
         IIdleProcioneNFT(nftContract).modifyCurrentHealth(tokenId, amount, isAddition);
+    }
+    
+    /// @notice Funzione di test per mintare un NFT usando mintFromEgg
+    /// @param to Indirizzo destinatario del mint
+    /// @return ID del token creato
+    function testMintFromEgg(address to) external returns (uint256) {
+        // Crea genetica mock per i test
+        uint256 genetics = createTestGenetics();
+        
+        // Definisce classe e fazione test
+        uint256 class = 1; // Classe test
+        uint256 faction = 2; // Fazione test
+        
+        // Chiama la funzione mintFromEgg del NFT
+        return IIdleProcioneNFT(idleProcioneNFT).mintFromEgg(to, genetics, class, faction);
+    }
+    
+    /// @notice Crea una genetica di test controllata per i test del fenotipo
+    /// @return La genetica generata
+    function createTestGenetics() internal pure returns (uint256) {
+        uint256 genetics = 0;
+        
+        // Creiamo una genetica con tratti dominanti e recessivi
+        
+        // HEAD: tipo dominante (0) con ID 3, tipo recessivo (1) con ID 5
+        uint256 head1 = (0 << 4) | 3;
+        uint256 head2 = (1 << 4) | 5;
+        
+        // FUR: tipo recessivo (1) con ID 2, tipo dominante (0) con ID 7
+        uint256 fur1 = (1 << 4) | 2;
+        uint256 fur2 = (0 << 4) | 7;
+        
+        // Altri alleli con mix di tipi per i test
+        uint256 star1 = (0 << 4) | 1;
+        uint256 star2 = (0 << 4) | 9;
+        uint256 weapon1 = (1 << 4) | 6;
+        uint256 weapon2 = (2 << 4) | 4;
+        uint256 acc1 = (2 << 4) | 8;
+        uint256 acc2 = (1 << 4) | 3;
+        
+        // Imposta la genetica
+        genetics = updateField(genetics, head1, 0x3F, 0);
+        genetics = updateField(genetics, head2, 0x3F, 6);
+        genetics = updateField(genetics, fur1, 0x3F, 12);
+        genetics = updateField(genetics, fur2, 0x3F, 18);
+        genetics = updateField(genetics, star1, 0x3F, 24);
+        genetics = updateField(genetics, star2, 0x3F, 30);
+        genetics = updateField(genetics, weapon1, 0x3F, 36);
+        genetics = updateField(genetics, weapon2, 0x3F, 42);
+        genetics = updateField(genetics, acc1, 0x3F, 48);
+        genetics = updateField(genetics, acc2, 0x3F, 54);
+        
+        return genetics;
+    }
+    
+    /// @notice Helper per aggiornare un campo nella genetica
+    /// @param data I dati originali
+    /// @param value Il nuovo valore
+    /// @param mask La maschera per il campo
+    /// @param position La posizione del campo
+    /// @return I dati aggiornati
+    function updateField(uint256 data, uint256 value, uint256 mask, uint256 position) internal pure returns (uint256) {
+        uint256 clearedData = data & ~(mask << position);
+        return clearedData | ((value & mask) << position);
     }
 } 

@@ -289,4 +289,95 @@ library GeneticsLib {
             counts.accTraitCount[traitId]++;
         }
     }
+
+    // ========== Fenotipo Functions ==========
+    // Struttura per i nomi dei tratti
+    struct TraitNames {
+        string[10] headNames;
+        string[10] furNames;
+        string[10] starNames;
+        string[10] weaponNames;
+        string[10] accessoryNames;
+    }
+
+    // Evento per la mutazione
+    event MutationOccurred(uint256 partType, string position, uint256 newAllele);
+
+    /// @notice Determina il fenotipo visibile di un procione dalla sua genetica
+    /// @param genetics La genetica completa del procione
+    /// @return fenotipo Array di 5 valori che rappresenta i tratti visibili per ogni parte
+    function determineFenotipo(uint256 genetics) internal pure returns (uint256[5] memory fenotipo) {
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 motherPos = i * 12;
+            uint256 fatherPos = motherPos + 6;
+            
+            // Estrai gli alleli materno e paterno
+            uint256 motherAllele = extractField(genetics, ALLELE_MASK, motherPos);
+            uint256 fatherAllele = extractField(genetics, ALLELE_MASK, fatherPos);
+            
+            // Estrai tipi e ID dei tratti
+            uint256 motherType = (motherAllele >> 4) & TRAIT_TYPE_MASK;
+            uint256 fatherType = (fatherAllele >> 4) & TRAIT_TYPE_MASK;
+            uint256 motherId = motherAllele & TRAIT_ID_MASK;
+            uint256 fatherId = fatherAllele & TRAIT_ID_MASK;
+            
+            // Regole di dominanza:
+            // 1. Se un allele è dominante e l'altro non lo è, il dominante viene espresso
+            // 2. Se entrambi sono dominanti, scegliamo casualmente (basato su hash deterministico)
+            // 3. Se nessuno è dominante, ma uno è recessivo e l'altro recessivo minore, il recessivo viene espresso
+            // 4. Se entrambi sono dello stesso tipo, scegliamo casualmente
+            
+            if (motherType == uint256(TraitType.DOMINANT) && fatherType != uint256(TraitType.DOMINANT)) {
+                fenotipo[i] = motherId;
+            } else if (fatherType == uint256(TraitType.DOMINANT) && motherType != uint256(TraitType.DOMINANT)) {
+                fenotipo[i] = fatherId;
+            } else if (motherType == uint256(TraitType.RECESSIVE) && fatherType == uint256(TraitType.MINOR_RECESSIVE)) {
+                fenotipo[i] = motherId;
+            } else if (fatherType == uint256(TraitType.RECESSIVE) && motherType == uint256(TraitType.MINOR_RECESSIVE)) {
+                fenotipo[i] = fatherId;
+            } else {
+                // Se sono dello stesso tipo o in altri casi, usiamo un hash deterministico 
+                // basato sulle combinazioni degli alleli per determinare quale viene espresso
+                uint256 seed = uint256(keccak256(abi.encodePacked(motherAllele, fatherAllele)));
+                fenotipo[i] = seed % 2 == 0 ? motherId : fatherId;
+            }
+        }
+        
+        return fenotipo;
+    }
+
+    /// @notice Calcola se avviene una mutazione genetica durante il breeding
+    /// @param genetics La genetica originale
+    /// @param randomValue Un valore casuale
+    /// @return La genetica potenzialmente mutata
+    function applyMutation(uint256 genetics, uint256 randomValue) internal returns (uint256) {
+        // Probabilità molto bassa di mutazione (es. 1% per ogni parte)
+        uint256 mutationChance = 100; // 1 su 100
+        
+        for (uint256 i = 0; i < 5; i++) {
+            // Usiamo segmenti diversi del randomValue per ogni parte
+            uint256 partRandomValue = uint256(keccak256(abi.encodePacked(randomValue, i)));
+            
+            // Verifica se avviene una mutazione
+            if (partRandomValue % mutationChance == 0) {
+                uint256 motherPos = i * 12;
+                uint256 fatherPos = motherPos + 6;
+                
+                // Decidi quale allele mutare (materno o paterno)
+                bool mutateMother = partRandomValue % 2 == 0;
+                uint256 position = mutateMother ? motherPos : fatherPos;
+                
+                // Genera un nuovo allele (simulato qui, nella pratica dovresti usare la funzione generateAllele)
+                uint256 newAllele = (partRandomValue % 3) << 4 | (partRandomValue % 10);
+                
+                // Applica la mutazione
+                genetics = updateField(genetics, newAllele, ALLELE_MASK, position);
+                
+                // Emetti un evento per la mutazione
+                emit MutationOccurred(i, mutateMother ? "MOTHER" : "FATHER", newAllele);
+            }
+        }
+        
+        return genetics;
+    }
 } 

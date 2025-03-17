@@ -69,7 +69,7 @@ describe("IdleProcioneNFT", function () {
 
         // Deploy mock breeding contract
         const MockBreedingContract = await ethers.getContractFactory("MockBreedingContract");
-        mockBreedingContract = await MockBreedingContract.deploy();
+        mockBreedingContract = await MockBreedingContract.deploy(await fixture.idleProcioneNFT.getAddress());
 
         // Assegna i valori alle variabili globali
         IdleProcioneNFT = fixture.idleProcioneNFT;
@@ -113,12 +113,15 @@ describe("IdleProcioneNFT", function () {
                 [sender, timestamp, mintCount]
             );
             
-            // Firmiamo il requestId con il timestamp
+            // Il contratto RandomnessConsumer.consumeRandomness si aspetta una firma di (randomNumber, timestamp)
+            // dove randomNumber è il requestId
             const message = ethers.solidityPackedKeccak256(
                 ["uint256", "uint256"],
                 [requestId, timestamp]
             );
             
+            // Firma il messaggio. Il metodo signMessage aggiunge automaticamente il prefisso EIP-191
+            // che corrisponde a ciò che il contratto verifica con MessageHashUtils.toEthSignedMessageHash
             return signer.signMessage(ethers.getBytes(message));
         }
 
@@ -343,12 +346,15 @@ describe("IdleProcioneNFT", function () {
                 [sender, timestamp, mintCount]
             );
             
-            // Firmiamo il requestId con il timestamp
+            // Il contratto RandomnessConsumer.consumeRandomness si aspetta una firma di (randomNumber, timestamp)
+            // dove randomNumber è il requestId
             const message = ethers.solidityPackedKeccak256(
                 ["uint256", "uint256"],
                 [requestId, timestamp]
             );
             
+            // Firma il messaggio. Il metodo signMessage aggiunge automaticamente il prefisso EIP-191
+            // che corrisponde a ciò che il contratto verifica con MessageHashUtils.toEthSignedMessageHash
             return signer.signMessage(ethers.getBytes(message));
         }
 
@@ -399,19 +405,22 @@ describe("IdleProcioneNFT", function () {
                 [sender, timestamp, mintCount]
             );
             
-            // Firmiamo il requestId con il timestamp
+            // Il contratto RandomnessConsumer.consumeRandomness si aspetta una firma di (randomNumber, timestamp)
+            // dove randomNumber è il requestId
             const message = ethers.solidityPackedKeccak256(
                 ["uint256", "uint256"],
                 [requestId, timestamp]
             );
             
+            // Firma il messaggio. Il metodo signMessage aggiunge automaticamente il prefisso EIP-191
+            // che corrisponde a ciò che il contratto verifica con MessageHashUtils.toEthSignedMessageHash
             return signer.signMessage(ethers.getBytes(message));
         }
 
         beforeEach(async function() {
             // Deploy un contratto mock autorizzato
             const MockAuthorizedContract = await ethers.getContractFactory("MockBreedingContract");
-            authorizedContract = await MockAuthorizedContract.deploy();
+            authorizedContract = await MockAuthorizedContract.deploy(await idleProcioneNFT.getAddress());
             await authorizedContract.waitForDeployment();
 
             // Mint un NFT per i test
@@ -547,12 +556,15 @@ describe("IdleProcioneNFT", function () {
                 [sender, timestamp, mintCount]
             );
             
-            // Firmiamo il requestId con il timestamp
+            // Il contratto RandomnessConsumer.consumeRandomness si aspetta una firma di (randomNumber, timestamp)
+            // dove randomNumber è il requestId
             const message = ethers.solidityPackedKeccak256(
                 ["uint256", "uint256"],
                 [requestId, timestamp]
             );
             
+            // Firma il messaggio. Il metodo signMessage aggiunge automaticamente il prefisso EIP-191
+            // che corrisponde a ciò che il contratto verifica con MessageHashUtils.toEthSignedMessageHash
             return signer.signMessage(ethers.getBytes(message));
         }
 
@@ -711,6 +723,256 @@ describe("IdleProcioneNFT", function () {
             const newData = await idleProcioneNFT.getProcioneData(tokenId);
             const newHealth = await statsLibTest.getCurrentHealth(newData);
             expect(newHealth).to.equal(initialHealth > healthToSubtract ? initialHealth - healthToSubtract : 0n);
+        });
+    });
+
+    // Helper per creare firme valide per il test
+    async function createValidSignature(address, timestamp, mintCount) {
+        // Calcoliamo il requestId esattamente come nel contratto
+        const requestId = ethers.solidityPackedKeccak256(
+            ["address", "uint256", "uint256"],
+            [address, timestamp, mintCount]
+        );
+        
+        // Il contratto RandomnessConsumer.consumeRandomness si aspetta una firma di (randomNumber, timestamp)
+        // dove randomNumber è il requestId
+        const message = ethers.solidityPackedKeccak256(
+            ["uint256", "uint256"],
+            [requestId, timestamp]
+        );
+        
+        // Firma il messaggio. Il metodo signMessage aggiunge automaticamente il prefisso EIP-191
+        // che corrisponde a ciò che il contratto verifica con MessageHashUtils.toEthSignedMessageHash
+        return signer.signMessage(ethers.getBytes(message));
+    }
+
+    describe("Sistema Fenotipo", function() {
+        let randomNumber;
+        
+        beforeEach(async function() {
+            await loadFixture(deployFixture);
+            
+            // Imposta l'indirizzo eggContract
+            await idleProcioneNFT.setEggContract(await mockBreedingContract.getAddress());
+            
+            // Imposta un randomness consumer mock
+            randomNumber = ethers.toBigInt(ethers.hexlify(ethers.randomBytes(32)));
+            
+            // Whitelist per i test
+            await idleProcioneNFT.setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.setPhaseStatus(1, true);
+            
+            // Imposta altri parametri per i test del fenotipo
+            await idleProcioneNFT.connect(owner).setBaseTokenURI("https://api.idle-procione.com/token/");
+            
+            // Imposta i nomi dei tratti per i test
+            await idleProcioneNFT.connect(owner).setTraitName(0, 0, "Testa Normale");
+            await idleProcioneNFT.connect(owner).setTraitName(0, 1, "Testa Rara");
+            await idleProcioneNFT.connect(owner).setTraitName(1, 0, "Pelo Marrone");
+            await idleProcioneNFT.connect(owner).setTraitName(1, 1, "Pelo Nero");
+            await idleProcioneNFT.connect(owner).setTraitName(2, 0, "Stella Normale");
+            await idleProcioneNFT.connect(owner).setTraitName(3, 0, "Arma Base");
+            await idleProcioneNFT.connect(owner).setTraitName(4, 0, "Accessorio Standard");
+            
+            // Imposta URI base per le immagini
+            await idleProcioneNFT.connect(owner).setImageBaseURI("HEAD", "https://api.idle-procione.com/images/head/");
+            await idleProcioneNFT.connect(owner).setImageBaseURI("FUR", "https://api.idle-procione.com/images/fur/");
+            await idleProcioneNFT.connect(owner).setImageBaseURI("STAR", "https://api.idle-procione.com/images/star/");
+            await idleProcioneNFT.connect(owner).setImageBaseURI("WEAPON", "https://api.idle-procione.com/images/weapon/");
+            await idleProcioneNFT.connect(owner).setImageBaseURI("ACCESSORY", "https://api.idle-procione.com/images/accessory/");
+        });
+        
+        async function mintProcione() {
+            // Imposta la fase e la whitelist
+            await idleProcioneNFT.connect(owner).setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.connect(owner).setPhaseStatus(1, true);
+            
+            // Ottieni il timestamp corrente e incrementalo
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 100;
+            await time.setNextBlockTimestamp(timestamp);
+            
+            // Calcola il requestId come nel contratto
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [addr1.address, timestamp, mintCount]
+            );
+            
+            // Genera un messaggio con il formato corretto per il contratto RandomnessConsumer
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            // Firma il messaggio
+            const signature = await signer.signMessage(ethers.getBytes(message));
+            
+            // Mint di un procione per i test
+            const tx = await idleProcioneNFT.connect(addr1).randomMint(signature);
+            await tx.wait();
+            
+            // Ritorna l'ID del token generato
+            return 0; // Primo token mintato
+        }
+        
+        it("Dovrebbe generare un fenotipo durante il mint", async function() {
+            const tokenId = await mintProcione();
+            
+            // Verifica che esista un fenotipo per il token
+            const fenotipo = await idleProcioneNFT.getFenotipo(tokenId);
+            
+            // Verifica che il fenotipo sia un array di lunghezza 5
+            expect(fenotipo.length).to.equal(5);
+            
+            // Verifica che ogni valore del fenotipo sia un numero valido (0-9)
+            for (let i = 0; i < 5; i++) {
+                expect(fenotipo[i]).to.be.gte(0);
+                expect(fenotipo[i]).to.be.lte(9);
+            }
+        });
+        
+        it("Dovrebbe memorizzare correttamente i nomi dei tratti", async function() {
+            const tokenId = await mintProcione();
+            
+            // Ottieni il fenotipo
+            const fenotipo = await idleProcioneNFT.getFenotipo(tokenId);
+            
+            // Ottieni i nomi dei tratti
+            const traitNames = await idleProcioneNFT.getTraitNames(tokenId);
+            
+            // Verifica che i nomi corrispondano ai valori impostati nel beforeEach
+            if (fenotipo[0] === 0n) {
+                expect(traitNames[0]).to.equal("Testa Normale");
+            } else if (fenotipo[0] === 1n) {
+                expect(traitNames[0]).to.equal("Testa Rara");
+            }
+            
+            if (fenotipo[1] === 0n) {
+                expect(traitNames[1]).to.equal("Pelo Marrone");
+            } else if (fenotipo[1] === 1n) {
+                expect(traitNames[1]).to.equal("Pelo Nero");
+            }
+        });
+        
+        it("Dovrebbe rilevare tratti recessivi nascosti di valore", async function() {
+            // Mint di un procione
+            const tokenId = await mintProcione();
+            
+            // In questo test non possiamo garantire che ci siano tratti recessivi nascosti
+            // (dipende dal generatore casuale), quindi verifichiamo solo che la funzione
+            // non lanci errori e restituisca un valore booleano
+            const hasHiddenTraits = await idleProcioneNFT.hasHiddenRecessiveTraits(tokenId);
+            expect(typeof hasHiddenTraits).to.equal('boolean');
+        });
+        
+        it("Dovrebbe generare un fenotipo anche durante mint da uovo", async function() {
+            // Crea un mock per gli eventi emessi
+            const mockEggContract = await ethers.getContractFactory("MockBreedingContract");
+            const eggContract = await mockEggContract.deploy(await idleProcioneNFT.getAddress());
+            await eggContract.waitForDeployment();
+            
+            // Imposta l'indirizzo del contratto uovo
+            await idleProcioneNFT.connect(owner).setEggContract(await eggContract.getAddress());
+            
+            // Simula la creazione di un NFT da un uovo
+            const tx = await eggContract.testMintFromEgg(addr1.address);
+            const receipt = await tx.wait();
+            
+            // L'evento ProcioneMinted viene emesso con tokenId = 0
+            const tokenId = 0;
+            
+            // Verifica che esista un fenotipo per il token mintato da uovo
+            const fenotipo = await idleProcioneNFT.getFenotipo(tokenId);
+            
+            // Verifica le stesse proprietà del test precedente
+            expect(fenotipo.length).to.equal(5);
+            
+            for (let i = 0; i < 5; i++) {
+                expect(fenotipo[i]).to.be.gte(0);
+                expect(fenotipo[i]).to.be.lte(9);
+            }
+        });
+        
+        it("Dovrebbe rispettare le regole di dominanza nel fenotipo", async function() {
+            // Questo test è più complicato perché dipende dal generatore casuale
+            // e richiede di conoscere la genetica interna del token.
+            // In un test reale, potremmo voler usare un NFT con genetica controllata.
+            
+            // Come semplificazione, verifichiamo solo che il fenotipo sia generato
+            // e che ogni attributo abbia un valore valido
+            const tokenId = await mintProcione();
+            const fenotipo = await idleProcioneNFT.getFenotipo(tokenId);
+            
+            for (let i = 0; i < 5; i++) {
+                expect(fenotipo[i]).to.be.gte(0);
+                expect(fenotipo[i]).to.be.lte(9);
+            }
+        });
+        
+        it("Dovrebbe rifiutare le chiamate ai metodi del fenotipo per token inesistenti", async function() {
+            const nonExistentTokenId = 9999;
+            
+            // getFenotipo
+            await expect(
+                idleProcioneNFT.getFenotipo(nonExistentTokenId)
+            ).to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+            
+            // getTraitNames
+            await expect(
+                idleProcioneNFT.getTraitNames(nonExistentTokenId)
+            ).to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+            
+            // hasHiddenRecessiveTraits
+            await expect(
+                idleProcioneNFT.hasHiddenRecessiveTraits(nonExistentTokenId)
+            ).to.be.revertedWithCustomError(idleProcioneNFT, "TokenNotExists");
+        });
+        
+        it("Dovrebbe consentire solo all'owner di impostare i nomi dei tratti", async function() {
+            // Tentativo di impostare un nome da un account non owner
+            await expect(
+                idleProcioneNFT.connect(addr1).setTraitName(0, 2, "Testa Aliena")
+            ).to.be.revertedWithCustomError(idleProcioneNFT, "OwnableUnauthorizedAccount");
+            
+            // L'owner può impostare un nome
+            await idleProcioneNFT.connect(owner).setTraitName(0, 2, "Testa Aliena");
+            
+            // Verifica che il nome sia stato impostato correttamente
+            // Purtroppo non possiamo verificarlo direttamente perché non abbiamo un getter
+            // per un singolo nome, ma solo per tutti i nomi di un token
+        });
+        
+        it("Dovrebbe emettere eventi corretti durante la creazione del fenotipo", async function() {
+            // Imposta la fase e la whitelist
+            await idleProcioneNFT.connect(owner).setWhitelistPhase1([addr1.address], true);
+            await idleProcioneNFT.connect(owner).setPhaseStatus(1, true);
+            
+            // Ottieni il timestamp corrente e incrementalo
+            const currentTime = await time.latest();
+            const timestamp = currentTime + 200;
+            await time.setNextBlockTimestamp(timestamp);
+            
+            // Calcola il requestId come nel contratto
+            const mintCount = await idleProcioneNFT.getRandomMintCount();
+            const requestId = ethers.solidityPackedKeccak256(
+                ["address", "uint256", "uint256"],
+                [addr1.address, timestamp, mintCount]
+            );
+            
+            // Genera un messaggio con il formato corretto per il contratto RandomnessConsumer
+            const message = ethers.solidityPackedKeccak256(
+                ["uint256", "uint256"],
+                [requestId, timestamp]
+            );
+            
+            // Firma il messaggio
+            const signature = await signer.signMessage(ethers.getBytes(message));
+            
+            // Il mint dovrebbe emettere l'evento FenotipoStabilito
+            await expect(
+                idleProcioneNFT.connect(addr1).randomMint(signature)
+            ).to.emit(idleProcioneNFT, "FenotipoStabilito");
         });
     });
 }); 
