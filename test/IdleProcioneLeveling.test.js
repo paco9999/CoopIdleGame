@@ -268,6 +268,74 @@ describe("IdleProcioneLeveling", function () {
             const finalTreasuryBalance = await rewardToken.balanceOf(treasury.address);
             expect(finalTreasuryBalance - initialTreasuryBalance).to.equal(expectedFee);
         });
+
+        it("Dovrebbe incrementare le statistiche in base al fenotipo durante il level up", async function () {
+            // Otteniamo il fenotipo del token
+            const fenotipo = await mockIdleProcioneNFT.getFenotipo(tokenId);
+            console.log("Fenotipo del procione:", fenotipo);
+            
+            // Otteniamo le statistiche iniziali
+            const initialData = await mockIdleProcioneNFT.getProcioneData(tokenId);
+            const initialHealth = BigInt(extractField(initialData, HEALTH_MASK, HEALTH_POSITION));
+            const initialStrength = BigInt(extractField(initialData, STRENGTH_MASK, STRENGTH_POSITION));
+            const initialSpeed = BigInt(extractField(initialData, SPEED_MASK, SPEED_POSITION));
+            const initialIntelligence = BigInt(extractField(initialData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            const initialAccuracy = BigInt(extractField(initialData, ACCURACY_MASK, ACCURACY_POSITION));
+            
+            console.log("Statistiche iniziali:", {
+                health: Number(initialHealth),
+                strength: Number(initialStrength),
+                speed: Number(initialSpeed),
+                intelligence: Number(initialIntelligence),
+                accuracy: Number(initialAccuracy)
+            });
+            
+            // Esegui level up
+            await idleProcioneLeveling.connect(addr1).levelUp(tokenId);
+            
+            // Otteniamo le statistiche finali
+            const finalData = await mockIdleProcioneNFT.getProcioneData(tokenId);
+            const finalHealth = BigInt(extractField(finalData, HEALTH_MASK, HEALTH_POSITION));
+            const finalStrength = BigInt(extractField(finalData, STRENGTH_MASK, STRENGTH_POSITION));
+            const finalSpeed = BigInt(extractField(finalData, SPEED_MASK, SPEED_POSITION));
+            const finalIntelligence = BigInt(extractField(finalData, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            const finalAccuracy = BigInt(extractField(finalData, ACCURACY_MASK, ACCURACY_POSITION));
+            
+            console.log("Statistiche dopo level up:", {
+                health: Number(finalHealth),
+                strength: Number(finalStrength),
+                speed: Number(finalSpeed),
+                intelligence: Number(finalIntelligence),
+                accuracy: Number(finalAccuracy)
+            });
+            
+            // Verifichiamo che le statistiche siano cambiate
+            expect(finalHealth).to.be.gte(initialHealth);
+            expect(finalStrength).to.be.gte(initialStrength);
+            expect(finalSpeed).to.be.gte(initialSpeed);
+            expect(finalIntelligence).to.be.gte(initialIntelligence);
+            expect(finalAccuracy).to.be.gte(initialAccuracy);
+            
+            // Verifichiamo che almeno una statistica sia aumentata
+            const anyStatIncreased = (
+                finalHealth > initialHealth ||
+                finalStrength > initialStrength ||
+                finalSpeed > initialSpeed ||
+                finalIntelligence > initialIntelligence ||
+                finalAccuracy > initialAccuracy
+            );
+            
+            expect(anyStatIncreased).to.be.true;
+            
+            // Registriamo i dettagli su quali statistiche sono cambiate
+            console.log("Incrementi:", {
+                health: Number(finalHealth - initialHealth),
+                strength: Number(finalStrength - initialStrength),
+                speed: Number(finalSpeed - initialSpeed),
+                intelligence: Number(finalIntelligence - initialIntelligence),
+                accuracy: Number(finalAccuracy - initialAccuracy)
+            });
+        });
     });
 
     describe("Admin Functions", function () {

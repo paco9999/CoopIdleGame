@@ -8,6 +8,7 @@ contract MockIdleProcioneNFT is ERC721 {
     uint256 private _nextTokenId;
     mapping(uint256 => uint256) private _procioneData;
     mapping(uint256 => bool) private _dungeonStatus;
+    mapping(uint256 => uint256[5]) private _fenotipo;
     uint256 constant MAX_HEALTH = 100;
 
     constructor() ERC721("MockIdleProcioneNFT", "MNFT") {}
@@ -20,6 +21,14 @@ contract MockIdleProcioneNFT is ERC721 {
         data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
         data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
+        
+        // Inizializza il fenotipo con valori casuali
+        uint256[5] memory fenotipo;
+        for (uint256 i = 0; i < 5; i++) {
+            fenotipo[i] = uint256(keccak256(abi.encodePacked(tokenId, i, block.timestamp))) % 10;
+        }
+        _fenotipo[tokenId] = fenotipo;
+        
         return tokenId;
     }
 
@@ -170,5 +179,26 @@ contract MockIdleProcioneNFT is ERC721 {
 
     function randomMint() external returns (uint256) {
         return safeMint(msg.sender);
+    }
+
+    /**
+     * @notice Restituisce il fenotipo (visibile) di un procione
+     * @dev Il fenotipo è un array di 5 numeri che rappresentano i tratti visibili
+     * @param tokenId ID del token
+     * @return Array di 5 valori che rappresentano i tratti visibili
+     */
+    function getFenotipo(uint256 tokenId) external view returns (uint256[5] memory) {
+        require(_ownerOf(tokenId) != address(0), "NFT does not exist");
+        return _fenotipo[tokenId];
+    }
+    
+    /**
+     * @notice Imposta il fenotipo di un procione (solo per scopi di test)
+     * @param tokenId ID del token
+     * @param fenotipo Array di 5 valori che rappresentano i tratti visibili
+     */
+    function setFenotipo(uint256 tokenId, uint256[5] memory fenotipo) external {
+        require(_ownerOf(tokenId) != address(0), "NFT does not exist");
+        _fenotipo[tokenId] = fenotipo;
     }
 } 

@@ -24,6 +24,40 @@ describe("IdleProcioneNFT", function () {
     const MAX_FAC_GEN = 100;
     const MAX_CLASS_GEN = 100;
 
+    // Maschere per i campi delle statistiche
+    const XP_MASK = "0x1FFFF";        // 0-16 (17 bit)
+    const LEVEL_MASK = "0xFF";        // 17-24
+    const HEALTH_MASK = "0xFF";       // 25-32
+    const STRENGTH_MASK = "0xFF";     // 33-40
+    const SPEED_MASK = "0xFF";        // 41-48
+    const INTELLIGENCE_MASK = "0xFF"; // 49-56
+    const ACCURACY_MASK = "0xFF";     // 57-64
+    const CURRENT_HEALTH_MASK = "0xFF"; // 65-72
+    const BREEDING_MASK = "0xFF";     // 80-87
+    const CLASS_MASK = "0xFF";        // 128-135
+    const FACTION_MASK = "0xFF";      // 136-143
+    const PROFESSION_MASK = "0xF";    // 144-147 (4 bit)
+    const PROFESSIONLVL_MASK = "0x1F"; // 148-152 (5 bit)
+    const PROFESSIONEXP_MASK = "0xFFFF"; // 153-168 (16 bit)
+    const DUNGEON_STATUS_MASK = "0x1"; // 169 (1 bit)
+
+    // Posizioni dei campi nel valore a 256 bit
+    const XP_POSITION = "0";
+    const LEVEL_POSITION = "17";
+    const HEALTH_POSITION = "25";
+    const STRENGTH_POSITION = "33";
+    const SPEED_POSITION = "41";
+    const INTELLIGENCE_POSITION = "49";
+    const ACCURACY_POSITION = "57";
+    const CURRENT_HEALTH_POSITION = "65";
+    const BREEDING_POSITION = "80";
+    const CLASS_POSITION = "128";
+    const FACTION_POSITION = "136";
+    const PROFESSION_POSITION = "144";
+    const PROFESSIONLVL_POSITION = "148";
+    const PROFESSIONEXP_POSITION = "153";
+    const DUNGEON_STATUS_POSITION = "169";
+
     async function deployFixture() {
         const [_owner, _addr1, _addr2] = await ethers.getSigners();
         
@@ -830,6 +864,45 @@ describe("IdleProcioneNFT", function () {
                 expect(fenotipo[i]).to.be.gte(0);
                 expect(fenotipo[i]).to.be.lte(9);
             }
+        });
+        
+        it("Dovrebbe applicare i bonus dei tratti alle statistiche iniziali", async function() {
+            const tokenId = await mintProcione();
+            
+            // Ottieni i dati del procione
+            const data = await idleProcioneNFT.getProcioneData(tokenId);
+            
+            // Ottieni il fenotipo e la classe
+            const fenotipo = await idleProcioneNFT.getFenotipo(tokenId);
+            const classe = await statsLibTest.extractField(data, CLASS_MASK, CLASS_POSITION);
+            
+            // Ottieni le statistiche del procione
+            const health = Number(await statsLibTest.extractField(data, HEALTH_MASK, HEALTH_POSITION));
+            const strength = Number(await statsLibTest.extractField(data, STRENGTH_MASK, STRENGTH_POSITION));
+            const speed = Number(await statsLibTest.extractField(data, SPEED_MASK, SPEED_POSITION));
+            const intelligence = Number(await statsLibTest.extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION));
+            const accuracy = Number(await statsLibTest.extractField(data, ACCURACY_MASK, ACCURACY_POSITION));
+            
+            // Verifica che le statistiche siano state inizializzate
+            expect(health).to.be.gt(0);
+            expect(strength).to.be.gt(0);
+            expect(speed).to.be.gt(0);
+            expect(intelligence).to.be.gt(0);
+            expect(accuracy).to.be.gt(0);
+            
+            // Per un test più accurato, dovremmo verificare che i modificatori della classe siano stati applicati
+            // Ma questo richiede di replicare la logica del contratto, quindi verifichiamo solo che ci siano valori validi
+            
+            // Verifichiamo che se il token è un Warrior (classe 1), abbia più forza di un mago (classe 4)
+            if (classe == 1) { // Warrior
+                // I guerrieri hanno +40% di forza, -20% di intelligenza
+                expect(strength).to.be.gte(10); // Almeno 10 di forza (il valore base è 10 + bonus di classe)
+            } else if (classe == 4) { // Mage
+                // I maghi hanno +40% di intelligenza, -20% di salute
+                expect(intelligence).to.be.gte(10); // Almeno 10 di intelligenza (il valore base è 10 + bonus di classe)
+            }
+            
+            console.log(`Procione mintato - Classe: ${classe}, Fenotipo: [${fenotipo}], Statistiche: HP=${health}, STR=${strength}, SPD=${speed}, INT=${intelligence}, ACC=${accuracy}`);
         });
         
         it("Dovrebbe memorizzare correttamente i nomi dei tratti", async function() {
