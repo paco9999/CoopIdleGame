@@ -49,7 +49,7 @@ describe("DungeonManager", function () {
     describe("Gestione Dungeon", function () {
         const dungeonId = 1;
         const itemsRequired = [1, 2, 3];
-        const dungeonStats = [100, 200, 300, 400];
+        const dungeonStats = [100, 200, 300, 400, 500];
         const timeDuration = 3600;
         const numberOfItemsRequired = 3;
 
@@ -78,7 +78,7 @@ describe("DungeonManager", function () {
         });
 
         it("Dovrebbe aggiornare correttamente le statistiche del dungeon", async function () {
-            const newStats = [150, 250, 350, 450];
+            const newStats = [150, 250, 350, 450, 550];
             await dungeonManager.updateDungeonStats(dungeonId, newStats);
             
             const dungeon = await dungeonManager.getDungeon(dungeonId);
@@ -136,13 +136,13 @@ describe("DungeonManager", function () {
             }
 
             await expect(
-                dungeonManager.initializeDungeon(1, validItems, [100, 200, 300, 400], 0, 3)
+                dungeonManager.initializeDungeon(1, validItems, [100, 200, 300, 400, 500], 0, 3)
             ).to.be.revertedWith("La durata deve essere maggiore di zero");
         });
 
         it("Non dovrebbe permettere l'aggiornamento delle statistiche di un dungeon non inizializzato", async function () {
             await expect(
-                dungeonManager.updateDungeonStats(999, [150, 250, 350, 450])
+                dungeonManager.updateDungeonStats(999, [150, 250, 350, 450, 550])
             ).to.be.revertedWith("Dungeon non inizializzato");
         });
 
@@ -170,7 +170,7 @@ describe("DungeonManager", function () {
                 await craftingManager.setRecipeValidity(recipeId, true);
             }
 
-            await dungeonManager.initializeDungeon(dungeonId, validItems, [100, 200, 300, 400], 3600, 3);
+            await dungeonManager.initializeDungeon(dungeonId, validItems, [100, 200, 300, 400, 500], 3600, 3);
             
             await expect(
                 dungeonManager.updateDungeonTime(dungeonId, 0)
@@ -181,7 +181,7 @@ describe("DungeonManager", function () {
     describe("Gestione Party", function () {
         const dungeonId = 1;
         const itemsRequired = [1, 2, 3];
-        const dungeonStats = [100, 200, 300, 400];
+        const dungeonStats = [100, 200, 300, 400, 500];
         const timeDuration = 3600;
         const numberOfItemsRequired = 3;
         let procioneIds;
@@ -327,7 +327,7 @@ describe("DungeonManager", function () {
     describe("Gestione PVP", function () {
         const dungeonId = 1;
         const itemsRequired = [1, 2, 3];
-        const dungeonStats = [100, 200, 300, 400];
+        const dungeonStats = [100, 200, 300, 400, 500];
         const timeDuration = 3600;
         const numberOfItemsRequired = 3;
         let procioneIds;
