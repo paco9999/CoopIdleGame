@@ -5,6 +5,7 @@ contract MockCraftingManager {
     mapping(uint256 => bool) private validRecipes;
     mapping(uint256 => uint256) private lockedSlots;
     mapping(uint256 => mapping(uint256 => uint256)) private slotUnlockTimes;
+    mapping(uint256 => uint256[5]) private itemBonuses;
 
     // Funzione richiesta da ICraftingManager per DungeonManager
     function areRecipesValid(uint256[] calldata recipeIds) external view returns (bool) {
@@ -19,6 +20,16 @@ contract MockCraftingManager {
     // Funzione di supporto per i test
     function setRecipeValidity(uint256 recipeId, bool isValid) external {
         validRecipes[recipeId] = isValid;
+    }
+
+    // Funzione richiesta da DungeonBattler per ottenere i bonus degli oggetti
+    function getItemBonus(uint256 itemId) external view returns (uint256[5] memory) {
+        return itemBonuses[itemId];
+    }
+    
+    // Funzione di supporto per i test
+    function setItemBonus(uint256 itemId, uint256[5] memory bonuses) external {
+        itemBonuses[itemId] = bonuses;
     }
 
     // Funzioni per la gestione degli slot di crafting
