@@ -192,6 +192,31 @@ contract MockIdleProcioneNFT is ERC721 {
         return tokenId;
     }
 
+    // Per test paralleli: mint con ID specifico
+    function simpleMintWithId(address to, uint256 tokenId) external returns (uint256) {
+        // Se l'id è maggiore del prossimo ID disponibile, aggiorna _nextTokenId
+        if (tokenId >= _nextTokenId) {
+            _nextTokenId = tokenId + 1;
+        }
+        
+        // Mint con ID specifico
+        _safeMint(to, tokenId);
+        
+        // Inizializza con salute massima e salute corrente al massimo
+        uint256 data = 0;
+        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        _procioneData[tokenId] = data;
+        
+        // Inizializza le statistiche con valori predefiniti
+        _strength[tokenId] = DEFAULT_STAT_VALUE;
+        _speed[tokenId] = DEFAULT_STAT_VALUE;
+        _intelligence[tokenId] = DEFAULT_STAT_VALUE;
+        _accuracy[tokenId] = DEFAULT_STAT_VALUE;
+        
+        return tokenId;
+    }
+
     function mintFromEgg(
         address to,
         uint256 genetics,
