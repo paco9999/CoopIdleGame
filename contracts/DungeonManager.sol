@@ -68,6 +68,13 @@ interface IDungeonBattler {
         uint256 comEarned,
         uint256[] memory materialsEarned
     );
+
+    function updateHealthAfterBattle(
+        uint256 procione1Id,
+        uint256 procione2Id,
+        uint256 procione3Id,
+        uint256[3] calldata updatedHealth
+    ) external;
 }
 
 /**
@@ -559,6 +566,19 @@ contract DungeonManager is Ownable, ReentrancyGuard {
             party.equippedItems,
             dungeon.dungeonStats,
             randomSeed
+        );
+        
+        // Aggiorna la salute dei procioni dopo la battaglia
+        uint256[3] memory updatedHealth = [
+            success ? (remainingHealth / 3) : 0, // Distribuzione approssimativa della salute
+            success ? (remainingHealth / 3) : 0,
+            success ? (remainingHealth / 3) : 0
+        ];
+        dungeonBattler.updateHealthAfterBattle(
+            party.procione1Id, 
+            party.procione2Id, 
+            party.procione3Id, 
+            updatedHealth
         );
         
         // Aggiorna lo stato del party

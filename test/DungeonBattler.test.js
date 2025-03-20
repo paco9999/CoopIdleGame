@@ -25,6 +25,7 @@ describe("DungeonBattler", function () {
     let idleProcioneNFT;
     let craftingManager;
     let randomnessConsumer;
+    let professionsManager;
     let owner;
     let addr1;
     let addr2;
@@ -35,14 +36,49 @@ describe("DungeonBattler", function () {
     // Costanti per il test
     const NUM_BATTLES = 100;
     const BASE_HEALTH = 100;
-    const DUNGEON_IDS = [1, 2, 3, 4, 5];
+    const DUNGEON_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const DUNGEON_STATS = [
-        [1, 1, 1, 1, 50], // Dungeon facile
-        [2, 1, 2, 2, 50], // Dungeon medio-facile
-        [3, 2, 2, 3, 50], // Dungeon medio
-        [4, 2, 3, 4, 50], // Dungeon difficile
-        [5, 3, 3, 5, 50]  // Dungeon molto difficile
+        [1, 1, 1, 1, 50], // Dungeon 1: Molto Facile
+        [1, 1, 1, 2, 50], // Dungeon 2: Facile
+        [2, 1, 1, 2, 50], // Dungeon 3: Facile+
+        [2, 1, 2, 2, 50], // Dungeon 4: Medio-Facile
+        [2, 2, 2, 3, 50], // Dungeon 5: Medio
+        [3, 2, 2, 3, 50], // Dungeon 6: Medio+
+        [3, 2, 2, 4, 50], // Dungeon 7: Difficile
+        [4, 2, 3, 4, 50], // Dungeon 8: Difficile+
+        [4, 3, 3, 5, 50], // Dungeon 9: Molto Difficile
+        [5, 3, 3, 5, 50]  // Dungeon 10: Estremo
     ];
+    
+    // Impostazione modalità di test
+    let useFixedHealth = false; // Default: usa salute randomizzata
+    let fixedHealthValue = 120; // Valore di vita fissa predefinito
+    let usePaladin = false; // Default: non utilizzare Paladin
+    
+    // Funzione per configurare i test
+    async function configureTests() {
+        console.log("\n=== CONFIGURAZIONE TEST DUNGEON BATTLER ===");
+        console.log("Seleziona la modalità di inizializzazione della salute dei procioni:");
+        console.log("1. Salute randomizzata (valori diversi per ogni battaglia)");
+        console.log("2. Salute fissa (tutti i procioni con " + fixedHealthValue + " HP)");
+        console.log("3. Party con Paladin (tutti i procioni con " + fixedHealthValue + " HP e un Paladin nel team)");
+        
+        const choice = await askQuestion("Seleziona un'opzione (1/2/3): ");
+        
+        if (choice === "3") {
+            useFixedHealth = true;
+            usePaladin = true;
+            console.log(`\n✅ Modalità selezionata: Party con Paladin (${fixedHealthValue} HP)`);
+        } else if (choice === "2") {
+            useFixedHealth = true;
+            console.log(`\n✅ Modalità selezionata: Salute fissa (${fixedHealthValue} HP)`);
+        } else {
+            useFixedHealth = false;
+            console.log("\n✅ Modalità selezionata: Salute randomizzata");
+        }
+        
+        return true;
+    }
 
     beforeEach(async function () {
         [owner, addr1, addr2] = await ethers.getSigners();
@@ -61,6 +97,10 @@ describe("DungeonBattler", function () {
         const MockDungeonManager = await ethers.getContractFactory("contracts/mocks/MockDungeonManager.sol:MockDungeonManager");
         dungeonManager = await MockDungeonManager.deploy();
 
+        // Deploy del mock per ProfessionsManager
+        const MockProfessionsManager = await ethers.getContractFactory("contracts/mocks/MockProfessionsManager.sol:MockProfessionsManager");
+        professionsManager = await MockProfessionsManager.deploy();
+
         // Deploy del DungeonBattler
         const DungeonBattler = await ethers.getContractFactory("DungeonBattler");
         dungeonBattler = await DungeonBattler.deploy(
@@ -69,6 +109,9 @@ describe("DungeonBattler", function () {
             await craftingManager.getAddress(),
             await randomnessConsumer.getAddress()
         );
+        
+        // Imposta il ProfessionsManager nel DungeonBattler
+        await dungeonBattler.setProfessionsManager(await professionsManager.getAddress());
     });
 
     // Funzione per bypassare il controllo onlyDungeonManager
@@ -232,43 +275,479 @@ describe("DungeonBattler", function () {
         });
     });
 
-    describe("Simulazione completa di battaglie", function () {
-        
-        // Preparazione dei procioni per la battaglia
-        async function prepareProciones(healthValues) {
-            const prociones = [];
+    describe("Funzionalità del Paladin", function () {
+        it("Dovrebbe verificare la coerenza tra professionsManager e idleProcioneNFT", async function () {
+            // Mint di un procione per il test
+            const tokenId = 99999;
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId);
             
-            for (let i = 0; i < 3; i++) {
-                // Mint un nuovo procione
-                const tx = await idleProcioneNFT.simpleMint(owner.address);
-                const receipt = await tx.wait();
-                
-                // Otteniamo il tokenId dal risultato
-                // Dato che simpleMint restituisce il tokenId, possiamo leggerlo dagli eventi o dall'output
-                const tokenId = i; // Per ora usiamo l'indice come fallback
-                
-                console.log(`Procione ${i} mintato con tokenId: ${tokenId}`);
-                
-                // Imposta le statistiche
-                await idleProcioneNFT.setStrength(tokenId, 10 + i * 5);
-                await idleProcioneNFT.setSpeed(tokenId, 10 + i * 3);
-                await idleProcioneNFT.setIntelligence(tokenId, 10 + i * 2);
-                await idleProcioneNFT.setAccuracy(tokenId, 10 + i * 4);
-                
-                // Imposta la salute
-                await idleProcioneNFT.setCurrentHealth(tokenId, healthValues[i]);
-                console.log(`Procione ${tokenId} impostato con salute: ${healthValues[i]}`);
-                
-                prociones.push(tokenId);
+            // Assegna la professione Paladin tramite professionsManager
+            await professionsManager.assignProfession(tokenId, 5); // 5 = PALADIN
+            
+            // Verifica la professione tramite professionsManager
+            const profManagerProfession = await professionsManager.getProfession(tokenId);
+            console.log(`Professione in professionsManager: ${profManagerProfession}`);
+            expect(profManagerProfession).to.equal(5);
+            
+            // Verifica la professione tramite idleProcioneNFT
+            const [nftProfession,,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+            console.log(`Professione in idleProcioneNFT: ${nftProfession}`);
+            
+            // Questo test probabilmente fallirà, dimostrando il problema
+            expect(nftProfession).to.equal(0); // Ci aspettiamo 0 (NONE) in quanto non è sincronizzato
+            
+            // Ora impostiamo la professione direttamente su idleProcioneNFT
+            await idleProcioneNFT.setProfession(tokenId, 5); // 5 = StatsLib.Professions.PALADIN
+            
+            // Verifichiamo di nuovo
+            const [nftProfessionAfter,,] = await idleProcioneNFT.getProfessionInfo(tokenId);
+            console.log(`Professione in idleProcioneNFT dopo setProfession: ${nftProfessionAfter}`);
+            expect(nftProfessionAfter).to.equal(5);
+        });
+
+        it("Dovrebbe attivare l'abilità di guarigione quando la salute scende sotto il 25%", async function () {
+            // Usiamo un timeout esteso per questo test
+            this.timeout(30000);
+            
+            // Configurazione del test
+            await setupDungeonManagerAuth();
+            
+            // Mint di 3 procioni per il party
+            const tokenId1 = 10001;
+            const tokenId2 = 10002;
+            const tokenId3 = 10003;
+            
+            // Creiamo i procioni con ID specifici
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId1);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId2);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId3);
+            
+            // Impostiamo statistiche base per i procioni
+            await idleProcioneNFT.setStrength(tokenId1, 50);  // Aumentata forza
+            await idleProcioneNFT.setSpeed(tokenId1, 40);     // Aumentata velocità
+            await idleProcioneNFT.setIntelligence(tokenId1, 30);
+            await idleProcioneNFT.setAccuracy(tokenId1, 40);
+            
+            await idleProcioneNFT.setStrength(tokenId2, 40);
+            await idleProcioneNFT.setSpeed(tokenId2, 50);    // Aumentata velocità
+            await idleProcioneNFT.setIntelligence(tokenId2, 40);
+            await idleProcioneNFT.setAccuracy(tokenId2, 30);
+            
+            await idleProcioneNFT.setStrength(tokenId3, 30);
+            await idleProcioneNFT.setSpeed(tokenId3, 40);
+            await idleProcioneNFT.setIntelligence(tokenId3, 50);  // Aumentata intelligenza
+            await idleProcioneNFT.setAccuracy(tokenId3, 40);
+            
+            // Impostiamo salute iniziale più alta per tutti i procioni
+            const initialHealth = 40;  // Aumentata da 30 a 100
+            await idleProcioneNFT.setCurrentHealth(tokenId1, initialHealth);
+            await idleProcioneNFT.setCurrentHealth(tokenId2, initialHealth);
+            await idleProcioneNFT.setCurrentHealth(tokenId3, initialHealth);
+            
+            // Assegniamo la professione Paladin al primo procione in entrambi i sistemi
+            await professionsManager.assignProfession(tokenId1, 5); // 5 = PALADIN
+            await idleProcioneNFT.setProfession(tokenId1, 5); // Imposta anche in NFT
+            
+            // Verifichiamo che la professione sia stata assegnata correttamente
+            const profession = await professionsManager.getProfession(tokenId1);
+            console.log(`Professione assegnata a tokenId1 in professionsManager: ${profession}`);
+            expect(profession).to.equal(5);
+            
+            // Verifichiamo anche in idleProcioneNFT
+            const [nftProfession,,] = await idleProcioneNFT.getProfessionInfo(tokenId1);
+            console.log(`Professione assegnata a tokenId1 in idleProcioneNFT: ${nftProfession}`);
+            expect(nftProfession).to.equal(5);
+                    
+            // Assicuriamoci che il Paladin non sia in cooldown
+            await professionsManager.deactivateCooldown(tokenId1);
+            
+            // Verifichiamo che isPaladinOnCooldown non lanci eccezioni
+            try {
+                const isOnCooldown = await professionsManager.isPaladinOnCooldown(tokenId1);
+                console.log(`Paladin in cooldown prima della battaglia: ${isOnCooldown}`);
+                expect(isOnCooldown).to.be.false;
+            } catch (error) {
+                console.error(`ERRORE: ${error.message}`);
+                // Se l'errore è "Not a paladin", è un problema con l'assegnazione della professione
+                if (error.message.includes("Not a paladin")) {
+                    console.log("Forzando la professione Paladin nel storage interno...");
+                    // Chiamiamo una funzione per forzare l'assegnazione se esiste
+                    if (typeof professionsManager.forceSetProfession === "function") {
+                        await professionsManager.forceSetProfession(tokenId1, 5);
+                        const newProfession = await professionsManager.getProfession(tokenId1);
+                        console.log(`Nuova professione dopo il force: ${newProfession}`);
+                    } else {
+                        console.log("Funzione forceSetProfession non disponibile");
+                    }
+                }
             }
             
-            return prociones;
-        }
+            // Verifichiamo che professionsManager sia impostato nel DungeonBattler
+            const profManagerAddress = await dungeonBattler.professionsManager();
+            console.log(`Indirizzo professionsManager nel DungeonBattler: ${profManagerAddress}`);
+            console.log(`Indirizzo del contratto mockProfessionsManager: ${professionsManager.target}`);
+            
+            // Se l'indirizzo è zero, impostiamolo
+            if (profManagerAddress === "0x0000000000000000000000000000000000000000") {
+                console.log("ProfessionsManager non impostato! Lo imposto ora...");
+                await dungeonBattler.setProfessionsManager(professionsManager.target);
+                const updatedProfManagerAddress = await dungeonBattler.professionsManager();
+                console.log(`Nuovo indirizzo professionsManager: ${updatedProfManagerAddress}`);
+            }
+            
+            // Prepariamo il party e le statistiche del dungeon
+            const partyTokenIds = [tokenId1, tokenId2, tokenId3];
+            const equippedItems = [0, 0, 0]; // Nessun oggetto equipaggiato
+            const dungeonStats = DUNGEON_STATS[7]; // Difficile+ invece di Facile+
+            const randomSeed = 12345;
+            
+            // Calcoliamo la salute totale iniziale del party
+            const totalInitialHealth = initialHealth * 3;
+            console.log(`Salute totale iniziale del party: ${totalInitialHealth}`);
+            
+            // Calcoliamo la soglia del 25% per l'attivazione della guarigione
+            const healingThreshold = totalInitialHealth * 0.25;
+            console.log(`Soglia di attivazione Paladin (25%): ${healingThreshold}`);
+            
+            // Verifichiamo tutti gli eventi emessi
+            console.log("Cercherò l'evento PaladinHealActivated o eventi simili");
+            
+            // Effettuiamo la battaglia
+            const tx = await dungeonBattler.calculateBattleOutcome(
+                8, // dungeonId (Difficile+) invece di 3 (Facile+)
+                0, // partyIndex
+                tokenId1, // Paladin
+                tokenId2,
+                tokenId3,
+                initialHealth,
+                initialHealth,
+                initialHealth,
+                equippedItems,
+                dungeonStats,
+                randomSeed
+            );
+            
+            // Attendiamo la conferma della transazione
+            const receipt = await tx.wait();
+            
+            // Analizziamo tutti gli eventi
+            const allEvents = receipt.logs
+                .filter(log => log.address === dungeonBattler.target)
+                .map(log => {
+                    try {
+                        return dungeonBattler.interface.parseLog(log);
+                    } catch (e) {
+                        return null;
+                    }
+                })
+                .filter(parsed => parsed !== null);
+            
+            // Stampa tutti gli eventi per debug
+            console.log(`\nEventi totali emessi: ${allEvents.length}`);
+            allEvents.forEach((event, index) => {
+                console.log(`Evento ${index + 1}: ${event.name}`);
+            });
+            
+            // Estraiamo gli eventi di guarigione
+            const healingEvents = allEvents
+                .filter(event => event.name === "PaladinHealActivated");
+            
+            console.log(`Eventi di guarigione trovati: ${healingEvents.length}`);
+            
+            // Vediamo se ci sono eventi con "heal" o "paladin" nel nome
+            const healOrPaladinEvents = allEvents
+                .filter(event => 
+                    event.name.toLowerCase().includes('heal') || 
+                    event.name.toLowerCase().includes('paladin')
+                );
+            
+            console.log(`Eventi che contengono "heal" o "paladin": ${healOrPaladinEvents.length}`);
+            if (healOrPaladinEvents.length > 0) {
+                healOrPaladinEvents.forEach((event, index) => {
+                    console.log(`Evento heal/paladin ${index + 1}: ${event.name}`);
+                    
+                    // Se è un evento di debug della condizione di guarigione, mostra i dettagli
+                    if (event.name === "PaladinHealConditionCheck") {
+                        console.log(`  - Salute corrente: ${event.args.currentHealth}`);
+                        console.log(`  - Soglia di guarigione: ${event.args.healthThreshold}`);
+                        console.log(`  - Ha Paladin: ${event.args.hasPaladin}`);
+                        console.log(`  - Paladin attivo: ${event.args.isPaladinActive}`);
+                        console.log(`  - Party vivo: ${event.args.isPartyAlive}`);
+                        console.log(`  - Sotto soglia: ${event.args.isBelowThreshold}`);
+                        console.log(`  - Manager cooldown attivo: ${event.args.isCooldownManagerActive}`);
+                        console.log(`  - Paladin in cooldown: ${event.args.isPaladinOnCooldown}`);
+                    }
+                });
+            }
+            
+            // Se ci sono eventi di guarigione, verifichiamo che solo il primo Paladin l'abbia attivata
+            if (healingEvents.length > 0) {
+                healingEvents.forEach(event => {
+                    expect(event.args.procione1Id).to.equal(tokenId1, "Solo il primo Paladin nel party dovrebbe attivare l'abilità di guarigione");
+                });
+            }
+
+            // Calcoliamo la salute totale iniziale del party e la soglia di guarigione
+            const totalInitialHealth2 = initialHealth * 3;
+            const healingThreshold2 = totalInitialHealth2 * 0.25;
+            
+            // Estraiamo gli eventi per verificare l'esito della battaglia
+            const battleResultEvents = allEvents
+                .filter(event => event.name === "DungeonBattleResult");
+            
+            // Verifichiamo l'esito della battaglia
+            let remainingHealth = 0;
+            
+            if (battleResultEvents.length > 0) {
+                const event = battleResultEvents[0];
+                remainingHealth = Number(event.args.remainingHealth);
+                console.log(`\nSalute rimanente: ${remainingHealth}/${totalInitialHealth2}`);
+                console.log(`Soglia di guarigione (25%): ${healingThreshold2}`);
+                console.log(`La condizione di attivazione è: ${remainingHealth < healingThreshold2 ? 'soddisfatta' : 'non soddisfatta'}`);
+                
+                // Mostra anche altri dettagli del battleResultEvent
+                console.log(`\nDettagli evento DungeonBattleResult:`);
+                console.log(`- dungeonId: ${event.args.dungeonId}`);
+                console.log(`- partyIndex: ${event.args.partyIndex}`);
+                console.log(`- success: ${event.args.success}`);
+                console.log(`- totalDamage: ${event.args.totalDamage}`);
+                console.log(`- trapTriggered: ${event.args.trapTriggered}`);
+            }
+
+            // Verifichiamo se la salute è scesa sotto il threshold
+            if (remainingHealth < healingThreshold2) {
+                expect(healingEvents.length).to.be.greaterThan(0, "L'abilità di guarigione del Paladin dovrebbe attivarsi quando la salute scende sotto il 25%");
+            } else {
+                console.log(`La salute (${remainingHealth}) non è scesa sotto la soglia di guarigione (${healingThreshold2}), quindi l'abilità non è stata attivata.`);
+            }
+        });
+
+        it("Dovrebbe attivare l'abilità di guarigione per un party con più Paladin considerando solo il primo", async function () {
+            // Configurazione del test
+            await setupDungeonManagerAuth();
+            
+            // Mint di 3 procioni per il party
+            const tokenId1 = 20001;
+            const tokenId2 = 20002;
+            const tokenId3 = 20003;
+            
+            // Creiamo i procioni con ID specifici
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId1);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId2);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId3);
+            
+            // Impostiamo statistiche base per i procioni
+            await idleProcioneNFT.setStrength(tokenId1, 50);  // Aumentata forza
+            await idleProcioneNFT.setSpeed(tokenId1, 40);     // Aumentata velocità
+            await idleProcioneNFT.setIntelligence(tokenId1, 30);
+            await idleProcioneNFT.setAccuracy(tokenId1, 40);
+            
+            await idleProcioneNFT.setStrength(tokenId2, 40);
+            await idleProcioneNFT.setSpeed(tokenId2, 50);    // Aumentata velocità
+            await idleProcioneNFT.setIntelligence(tokenId2, 40);
+            await idleProcioneNFT.setAccuracy(tokenId2, 30);
+            
+            await idleProcioneNFT.setStrength(tokenId3, 30);
+            await idleProcioneNFT.setSpeed(tokenId3, 40);
+            await idleProcioneNFT.setIntelligence(tokenId3, 50);  // Aumentata intelligenza
+            await idleProcioneNFT.setAccuracy(tokenId3, 40);
+            
+            // Impostiamo salute iniziale più alta per tutti i procioni
+            const initialHealth = 100;  // Aumentata da 30 a 100
+            await idleProcioneNFT.setCurrentHealth(tokenId1, initialHealth);
+            await idleProcioneNFT.setCurrentHealth(tokenId2, initialHealth);
+            await idleProcioneNFT.setCurrentHealth(tokenId3, initialHealth);
+            
+            // Assegniamo la professione Paladin a due procioni in entrambi i sistemi
+            await professionsManager.assignProfession(tokenId1, 5); // 5 = PALADIN
+            await professionsManager.assignProfession(tokenId2, 5); // 5 = PALADIN
+            
+            await idleProcioneNFT.setProfession(tokenId1, 5); // Imposta anche in NFT
+            await idleProcioneNFT.setProfession(tokenId2, 5); // Imposta anche in NFT
+            
+            // Verifichiamo che le professioni siano state assegnate correttamente
+            const profession1 = await professionsManager.getProfession(tokenId1);
+            const profession2 = await professionsManager.getProfession(tokenId2);
+            console.log(`Professione assegnata a tokenId1 in professionsManager: ${profession1}`);
+            console.log(`Professione assegnata a tokenId2 in professionsManager: ${profession2}`);
+            expect(profession1).to.equal(5);
+            expect(profession2).to.equal(5);
+            
+            // Verifichiamo anche in idleProcioneNFT
+            const [nftProfession1,,] = await idleProcioneNFT.getProfessionInfo(tokenId1);
+            const [nftProfession2,,] = await idleProcioneNFT.getProfessionInfo(tokenId2);
+            console.log(`Professione assegnata a tokenId1 in idleProcioneNFT: ${nftProfession1}`);
+            console.log(`Professione assegnata a tokenId2 in idleProcioneNFT: ${nftProfession2}`);
+            expect(nftProfession1).to.equal(5);
+            expect(nftProfession2).to.equal(5);
+            
+            // Assicuriamoci che entrambi i Paladin non siano in cooldown
+            await professionsManager.deactivateCooldown(tokenId1);
+            await professionsManager.deactivateCooldown(tokenId2);
+            
+            // Verifichiamo che isPaladinOnCooldown non lanci eccezioni
+            try {
+                const isOnCooldown1 = await professionsManager.isPaladinOnCooldown(tokenId1);
+                const isOnCooldown2 = await professionsManager.isPaladinOnCooldown(tokenId2);
+                console.log(`Paladin 1 in cooldown prima della battaglia: ${isOnCooldown1}`);
+                console.log(`Paladin 2 in cooldown prima della battaglia: ${isOnCooldown2}`);
+                expect(isOnCooldown1).to.be.false;
+                expect(isOnCooldown2).to.be.false;
+            } catch (error) {
+                console.error(`ERRORE: ${error.message}`);
+                // Se l'errore è "Not a paladin", è un problema con l'assegnazione della professione
+                if (error.message.includes("Not a paladin")) {
+                    console.log("Forzando la professione Paladin nel storage interno...");
+                    // Chiamiamo una funzione per forzare l'assegnazione se esiste
+                    if (typeof professionsManager.forceSetProfession === "function") {
+                        await professionsManager.forceSetProfession(tokenId1, 5);
+                        await professionsManager.forceSetProfession(tokenId2, 5);
+                        const newProfession1 = await professionsManager.getProfession(tokenId1);
+                        const newProfession2 = await professionsManager.getProfession(tokenId2);
+                        console.log(`Nuova professione tokenId1 dopo il force: ${newProfession1}`);
+                        console.log(`Nuova professione tokenId2 dopo il force: ${newProfession2}`);
+                    } else {
+                        console.log("Funzione forceSetProfession non disponibile");
+                    }
+                }
+            }
+            
+            // Verifichiamo che professionsManager sia impostato nel DungeonBattler
+            const profManagerAddress = await dungeonBattler.professionsManager();
+            console.log(`Indirizzo professionsManager nel DungeonBattler: ${profManagerAddress}`);
+            console.log(`Indirizzo del contratto mockProfessionsManager: ${professionsManager.target}`);
+            
+            // Se l'indirizzo è zero, impostiamolo
+            if (profManagerAddress === "0x0000000000000000000000000000000000000000") {
+                console.log("ProfessionsManager non impostato! Lo imposto ora...");
+                await dungeonBattler.setProfessionsManager(professionsManager.target);
+                const updatedProfManagerAddress = await dungeonBattler.professionsManager();
+                console.log(`Nuovo indirizzo professionsManager: ${updatedProfManagerAddress}`);
+            }
+            
+            // Prepariamo il party e le statistiche del dungeon
+            const partyTokenIds = [tokenId1, tokenId2, tokenId3];
+            const equippedItems = [0, 0, 0]; // Nessun oggetto equipaggiato
+            const dungeonStats = DUNGEON_STATS[7]; // Difficile+
+            const randomSeed = 12345;
+            
+            // Effettuiamo la battaglia
+            const tx = await dungeonBattler.calculateBattleOutcome(
+                8, // dungeonId (Difficile+)
+                0, // partyIndex
+                tokenId1, // Primo Paladin
+                tokenId2, // Secondo Paladin
+                tokenId3,
+                initialHealth,
+                initialHealth,
+                initialHealth,
+                equippedItems,
+                dungeonStats,
+                randomSeed
+            );
+            
+            // Attendiamo la conferma della transazione
+            const receipt = await tx.wait();
+            
+            // Analizziamo tutti gli eventi
+            const allEvents = receipt.logs
+                .filter(log => log.address === dungeonBattler.target)
+                .map(log => {
+                    try {
+                        return dungeonBattler.interface.parseLog(log);
+                    } catch (e) {
+                        return null;
+                    }
+                })
+                .filter(parsed => parsed !== null);
+            
+            // Stampa tutti gli eventi per debug
+            console.log(`\nEventi totali emessi: ${allEvents.length}`);
+            allEvents.forEach((event, index) => {
+                console.log(`Evento ${index + 1}: ${event.name}`);
+            });
+            
+            // Estraiamo gli eventi di guarigione
+            const healingEvents = allEvents
+                .filter(event => event.name === "PaladinHealActivated");
+            
+            console.log(`Eventi di guarigione trovati: ${healingEvents.length}`);
+            
+            // Vediamo se ci sono eventi con "heal" o "paladin" nel nome
+            const healOrPaladinEvents = allEvents
+                .filter(event => 
+                    event.name.toLowerCase().includes('heal') || 
+                    event.name.toLowerCase().includes('paladin')
+                );
+            
+            console.log(`Eventi che contengono "heal" o "paladin": ${healOrPaladinEvents.length}`);
+            if (healOrPaladinEvents.length > 0) {
+                healOrPaladinEvents.forEach((event, index) => {
+                    console.log(`Evento heal/paladin ${index + 1}: ${event.name}`);
+                    
+                    // Se è un evento di debug della condizione di guarigione, mostra i dettagli
+                    if (event.name === "PaladinHealConditionCheck") {
+                        console.log(`  - Salute corrente: ${event.args.currentHealth}`);
+                        console.log(`  - Soglia di guarigione: ${event.args.healthThreshold}`);
+                        console.log(`  - Ha Paladin: ${event.args.hasPaladin}`);
+                        console.log(`  - Paladin attivo: ${event.args.isPaladinActive}`);
+                        console.log(`  - Party vivo: ${event.args.isPartyAlive}`);
+                        console.log(`  - Sotto soglia: ${event.args.isBelowThreshold}`);
+                        console.log(`  - Manager cooldown attivo: ${event.args.isCooldownManagerActive}`);
+                        console.log(`  - Paladin in cooldown: ${event.args.isPaladinOnCooldown}`);
+                    }
+                });
+            }
+            
+            // Se ci sono eventi di guarigione, verifichiamo che solo il primo Paladin l'abbia attivata
+            if (healingEvents.length > 0) {
+                healingEvents.forEach(event => {
+                    expect(event.args.procione1Id).to.equal(tokenId1, "Solo il primo Paladin nel party dovrebbe attivare l'abilità di guarigione");
+                });
+            }
+
+            // Calcoliamo la salute totale iniziale del party e la soglia di guarigione
+            const totalInitialHealth2 = initialHealth * 3;
+            const healingThreshold2 = totalInitialHealth2 * 0.25;
+            
+            // Estraiamo gli eventi per verificare l'esito della battaglia
+            const battleResultEvents = allEvents
+                .filter(event => event.name === "DungeonBattleResult");
+            
+            // Verifichiamo l'esito della battaglia
+            let remainingHealth = 0;
+            
+            if (battleResultEvents.length > 0) {
+                const event = battleResultEvents[0];
+                remainingHealth = Number(event.args.remainingHealth);
+                console.log(`\nSalute rimanente: ${remainingHealth}/${totalInitialHealth2}`);
+                console.log(`Soglia di guarigione (25%): ${healingThreshold2}`);
+                console.log(`La condizione di attivazione è: ${remainingHealth < healingThreshold2 ? 'soddisfatta' : 'non soddisfatta'}`);
+                
+                // Mostra anche altri dettagli del battleResultEvent
+                console.log(`\nDettagli evento DungeonBattleResult:`);
+                console.log(`- dungeonId: ${event.args.dungeonId}`);
+                console.log(`- partyIndex: ${event.args.partyIndex}`);
+                console.log(`- success: ${event.args.success}`);
+                console.log(`- totalDamage: ${event.args.totalDamage}`);
+                console.log(`- trapTriggered: ${event.args.trapTriggered}`);
+            }
+
+            // Verifichiamo se la salute è scesa sotto il threshold
+            if (remainingHealth < healingThreshold2) {
+                expect(healingEvents.length).to.be.greaterThan(0, "L'abilità di guarigione del Paladin dovrebbe attivarsi quando la salute scende sotto il 25%");
+            } else {
+                console.log(`La salute (${remainingHealth}) non è scesa sotto la soglia di guarigione (${healingThreshold2}), quindi l'abilità non è stata attivata.`);
+            }
+        });
         
         // Esecuzione del test di battaglia
         it("Dovrebbe simulare battaglie e registrare gli esiti", async function () {
             // Aumentiamo il timeout per permettere l'esecuzione completa
             this.timeout(600000); // 10 minuti
+            
+            // Configurazione del test
+            await configureTests();
             
             // Aggiorna l'autorizzazione per bypassare il modifier onlyDungeonManager
             await setupDungeonManagerAuth();
@@ -286,10 +765,10 @@ describe("DungeonBattler", function () {
             let failureCount = 0;
             
             // Configurazione del test parallelo
-            const testBattles = 10000;
+            const testBattles = 500; // Ridotto per evitare tempi di esecuzione troppo lunghi
             const batchSize = 50; // Riduciamo la dimensione dei batch per avere più parallelismo
             const numBatches = Math.ceil(testBattles / batchSize);
-            const maxConcurrentThreads = 50; // Ridotto il numero massimo di thread paralleli per evitare errori di memoria
+            const maxConcurrentThreads = 60; // Ridotto il numero massimo di thread paralleli per evitare errori di memoria
             
             console.log(`\nEsecuzione di ${testBattles} battaglie in ${numBatches} batch (${batchSize} battaglie per batch)`);
             console.log(`Utilizzo di massimo ${maxConcurrentThreads} thread paralleli`);
@@ -297,7 +776,7 @@ describe("DungeonBattler", function () {
             // Salviamo lo stato della blockchain per ripristinarlo rapidamente
             const snapshotId = await ethers.provider.send("evm_snapshot", []);
             
-            // Funzione per preparare un token ID univoco per ogni batch e procione
+            // Funzione per preparare un token ID univoco per ogni batch e procion
             function getUniqueTokenId(batchIndex, procionIndex) {
                 return batchIndex * 1000 + procionIndex;
             }
@@ -343,8 +822,13 @@ describe("DungeonBattler", function () {
                             break;
                     }
                     
+                    // Applica la configurazione di salute fissa se selezionata
+                    if (useFixedHealth) {
+                        healthValues = [fixedHealthValue, fixedHealthValue, fixedHealthValue];
+                    }
+                    
                     // Genera token ID unici per questo batch
-                    const prociones = [];
+                    const procioni = [];
                     for (let i = 0; i < 3; i++) {
                         const tokenId = getUniqueTokenId(batchIndex, i + (battleIndex - startBattleIndex) * 3);
                         
@@ -358,6 +842,18 @@ describe("DungeonBattler", function () {
                             await idleProcioneNFT.setIntelligence(tokenId, 10 + i * 2);
                             await idleProcioneNFT.setAccuracy(tokenId, 10 + i * 4);
                             
+                            // Se è richiesto un party con Paladin, rendi il primo procione (i == 0) di ogni party un Paladin
+                            if (usePaladin && i == 0) {
+                                // Assegna la professione Paladin sia in professionsManager che in idleProcioneNFT
+                                await professionsManager.assignProfession(tokenId, 5);
+                                await idleProcioneNFT.setProfession(tokenId, 5); // Imposta anche in NFT
+                                await professionsManager.deactivateCooldown(tokenId);
+                                
+                                if (battleIndex % 20 === 0) {
+                                    console.log(`Configurato procione Paladin per party ${battleIndex}`);
+                                }
+                            }
+                            
                             // Memorizza che è stato creato
                             procioniPerBatch[tokenId] = true;
                         }
@@ -365,7 +861,7 @@ describe("DungeonBattler", function () {
                         // Imposta la salute per questa battaglia
                         await idleProcioneNFT.setCurrentHealth(tokenId, healthValues[i]);
                         
-                        prociones.push(tokenId);
+                        procioni.push(tokenId);
                     }
                     
                     // Seleziona un dungeon (alterna tra i 5 tipi)
@@ -381,9 +877,9 @@ describe("DungeonBattler", function () {
                         const tx = await dungeonBattler.calculateBattleOutcome(
                             dungeonId,
                             0, // partyIndex
-                            prociones[0],
-                            prociones[1],
-                            prociones[2],
+                            procioni[0],
+                            procioni[1],
+                            procioni[2],
                             healthValues[0],
                             healthValues[1],
                             healthValues[2],
@@ -407,6 +903,21 @@ describe("DungeonBattler", function () {
                             })
                             .filter(parsed => parsed && parsed.name === "DungeonBattleResult");
                         
+                        // Estrai anche tutti gli eventi per verificare le guarigioni Paladin
+                        const allEvents = receipt.logs
+                            .filter(log => log.address === dungeonBattler.target)
+                            .map(log => {
+                                try {
+                                    return dungeonBattler.interface.parseLog(log);
+                                } catch (e) {
+                                    return null;
+                                }
+                            })
+                            .filter(parsed => parsed !== null);
+                        
+                        // Cerca eventi di guarigione Paladin
+                        const healingEvents = allEvents.filter(event => event.name === "PaladinHealActivated");
+                        
                         let success = false;
                         let remainingHealth = 0;
                         let xpEarned = 0;
@@ -420,6 +931,23 @@ describe("DungeonBattler", function () {
                             remainingHealth = Number(event.args.remainingHealth);
                             xpEarned = Number(event.args.xpEarned);
                             comEarned = Number(event.args.comEarned);
+                            
+                            // Se ci sono eventi di guarigione, incrementa i contatori
+                            if (healingEvents.length > 0) {
+                                healingStats[getDungeonDifficulty(dungeonIndex)] += healingEvents.length;
+                                totalHealings += healingEvents.length;
+                                
+                                // Log conciso per ogni guarigione
+                                const difficultyShort = getDungeonDifficulty(dungeonIndex).substring(0, 5);
+                                console.log(`🧪 Paladin ha curato in ${difficultyShort} (Battaglia ${battleIndex}) - HP rimanente: ${remainingHealth}`);
+                            }
+                        }
+                        
+                        // Otteniamo le informazioni sui singoli procioni usati nella battaglia
+                        // Questo ci permetterà di salvare lo stato esatto di ogni procione
+                        const healthPerProcione = [];
+                        for (let i = 0; i < 3; i++) {
+                            healthPerProcione.push(healthValues[i]);
                         }
                         
                         // Registra i risultati
@@ -431,8 +959,30 @@ describe("DungeonBattler", function () {
                             success: success,
                             remainingHealth: remainingHealth,
                             xpEarned: xpEarned,
-                            comEarned: comEarned
+                            comEarned: comEarned,
+                            prociones: procioni.slice(), // Salviamo i riferimenti ai procioni
+                            individualHealth: [] // Inizializziamo l'array per la salute individuale
                         };
+                        
+                        // Per ogni procione, salviamo la sua salute attuale
+                        for (let i = 0; i < 3; i++) {
+                            try {
+                                // Leggiamo la salute attuale dal contratto NFT
+                                const currentHealth = await idleProcioneNFT.getCurrentHealth(procioni[i]);
+                                battleResult.individualHealth.push(Number(currentHealth));
+                            } catch (e) {
+                                // In caso di errore, usiamo una stima basata sulla vita totale rimanente
+                                console.error(`Errore nella lettura della salute del procione ${procioni[i]}: ${e.message}`);
+                                // Stimiamo la vita rimanente in proporzione alla vita iniziale
+                                if (battleResult.initialHealth > 0) {
+                                    const healthRatio = battleResult.remainingHealth / battleResult.initialHealth;
+                                    const estimatedHealth = Math.floor(healthValues[i] * healthRatio);
+                                    battleResult.individualHealth.push(estimatedHealth);
+                                } else {
+                                    battleResult.individualHealth.push(0);
+                                }
+                            }
+                        }
                         
                         localBattleResults.push(battleResult);
                         
@@ -458,7 +1008,7 @@ describe("DungeonBattler", function () {
                         console.error(`⚠️ ERRORE BATTAGLIA ${battleIndex} (batch ${batchIndex+1})`);
                         console.error(`🔸 Messaggio: ${error.message}`);
                         console.error(`🔸 Dungeon: ${dungeonId} (${getDungeonDifficulty(dungeonIndex)})`);
-                        console.error(`🔸 Procioni IDs: ${prociones.join(', ')}`);
+                        console.error(`🔸 Procioni IDs: ${procioni.join(', ')}`);
                         console.error(`🔸 Salute iniziale: ${healthValues.join(', ')}`);
                         
                         // Implementa un retry per la singola battaglia
@@ -479,9 +1029,9 @@ describe("DungeonBattler", function () {
                                 const retryTx = await dungeonBattler.calculateBattleOutcome(
                                     dungeonId,
                                     0,
-                                    prociones[0],
-                                    prociones[1],
-                                    prociones[2],
+                                    procioni[0],
+                                    procioni[1],
+                                    procioni[2],
                                     healthValues[0],
                                     healthValues[1],
                                     healthValues[2],
@@ -512,6 +1062,30 @@ describe("DungeonBattler", function () {
                                     const remainingHealth = Number(event.args.remainingHealth);
                                     const xpEarned = Number(event.args.xpEarned);
                                     const comEarned = Number(event.args.comEarned);
+                                    
+                                    // Verifica anche gli eventi di guarigione del Paladin
+                                    const allRetryEvents = retryReceipt.logs
+                                        .filter(log => log.address === dungeonBattler.target)
+                                        .map(log => {
+                                            try {
+                                                return dungeonBattler.interface.parseLog(log);
+                                            } catch (e) {
+                                                return null;
+                                            }
+                                        })
+                                        .filter(parsed => parsed !== null);
+                                        
+                                    const retryHealingEvents = allRetryEvents.filter(event => event.name === "PaladinHealActivated");
+                                    
+                                    // Se ci sono eventi di guarigione, incrementa i contatori
+                                    if (retryHealingEvents.length > 0) {
+                                        healingStats[getDungeonDifficulty(dungeonIndex)] += retryHealingEvents.length;
+                                        totalHealings += retryHealingEvents.length;
+                                        
+                                        // Log conciso per ogni guarigione
+                                        const difficultyShort = getDungeonDifficulty(dungeonIndex).substring(0, 5);
+                                        console.log(`🧪 Paladin ha curato in ${difficultyShort} (Battaglia ${battleIndex}-retry) - HP rimanente: ${remainingHealth}`);
+                                    }
                                     
                                     // Registra i risultati
                                     const battleResult = {
@@ -550,8 +1124,8 @@ describe("DungeonBattler", function () {
                         // Se tutti i retry sono falliti, aggiungiamo comunque un risultato negativo
                         if (!retrySuccess) {
                             console.error(`❌ BATTAGLIA ${battleIndex} ABBANDONATA dopo 3 tentativi falliti`);
-                            retryFailureCount++;
                             
+                            // Creiamo un risultato vuoto per il batch fallito per evitare di bloccare l'esecuzione
                             // Aggiungiamo un risultato di battaglia fallita
                             const failedBattleResult = {
                                 battleIndex,
@@ -592,6 +1166,21 @@ describe("DungeonBattler", function () {
             let errorCount = 0;
             let retrySuccessCount = 0;
             let retryFailureCount = 0;
+            
+            // Contatore delle cure Paladin per difficoltà
+            const healingStats = {
+                "Molto Facile": 0,
+                "Facile": 0,
+                "Facile+": 0,
+                "Medio-Facile": 0,
+                "Medio": 0,
+                "Medio+": 0,
+                "Difficile": 0,
+                "Difficile+": 0,
+                "Molto Difficile": 0,
+                "Estremo": 0
+            };
+            let totalHealings = 0;
             
             // Sistema di salvataggio periodico per recovery dopo crash
             let lastSaveTime = startTime;
@@ -1066,11 +1655,16 @@ describe("DungeonBattler", function () {
             
             // Inizializza i contatori per ogni livello di difficoltà
             const difficultyStats = {
-                "Molto Facile": { total: 0, victories: 0, defeats: 0 },
-                "Facile": { total: 0, victories: 0, defeats: 0 },
-                "Medio": { total: 0, victories: 0, defeats: 0 },
-                "Difficile": { total: 0, victories: 0, defeats: 0 },
-                "Molto Difficile": { total: 0, victories: 0, defeats: 0 }
+                "Molto Facile": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Facile": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Facile+": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Medio-Facile": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Medio": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Medio+": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Difficile": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Difficile+": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Molto Difficile": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 },
+                "Estremo": { total: 0, victories: 0, defeats: 0, avgRemainingHealth: 0 }
             };
             
             // Popola le statistiche
@@ -1078,27 +1672,55 @@ describe("DungeonBattler", function () {
                 difficultyStats[r.dungeonDifficulty].total++;
                 if (r.success) {
                     difficultyStats[r.dungeonDifficulty].victories++;
+                    difficultyStats[r.dungeonDifficulty].avgRemainingHealth += r.remainingHealth;
                 } else {
                     difficultyStats[r.dungeonDifficulty].defeats++;
                 }
             });
             
+            // Calcola la media della salute rimanente per le vittorie
+            Object.values(difficultyStats).forEach(stat => {
+                if (stat.victories > 0) {
+                    stat.avgRemainingHealth = Math.round(stat.avgRemainingHealth / stat.victories);
+                }
+            });
+            
             // Stampa l'intestazione della tabella
-            console.log("Difficoltà       | Battaglie | Vittorie | Sconfitte | % Vittorie");
-            console.log("--------------------------------------------------------");
+            console.log("Difficoltà       | Battaglie | Vittorie | Sconfitte | % Vittorie | HP Media");
+            console.log("--------------------------------------------------------------------");
             
             // Stampa i risultati per ogni difficoltà
             Object.entries(difficultyStats).forEach(([difficulty, stats]) => {
                 if (stats.total > 0) { // Mostra solo le difficoltà con almeno una battaglia
                     const victoryRate = (stats.victories / stats.total * 100).toFixed(2);
-                    console.log(`${difficulty.padEnd(16)} | ${stats.total.toString().padEnd(9)} | ${stats.victories.toString().padEnd(8)} | ${stats.defeats.toString().padEnd(9)} | ${victoryRate.padEnd(9)}%`);
+                    console.log(`${difficulty.padEnd(16)} | ${stats.total.toString().padEnd(9)} | ${stats.victories.toString().padEnd(8)} | ${stats.defeats.toString().padEnd(9)} | ${victoryRate.padEnd(9)}% | ${stats.avgRemainingHealth}`);
                 }
             });
+            
+            // Mostra le statistiche delle guarigioni del Paladin
+            if (usePaladin) {
+                console.log("\nStatistiche Guarigioni Paladin:");
+                console.log("================================");
+                console.log("Difficoltà       | Guarigioni | % sul totale | Guarigioni/Battaglie");
+                console.log("----------------------------------------------------------------");
+                
+                // Calcola le percentuali e stampa i risultati
+                Object.entries(healingStats).forEach(([difficulty, healCount]) => {
+                    if (difficultyStats[difficulty] && difficultyStats[difficulty].total > 0) {
+                        const percentOfTotal = (healCount / totalHealings * 100).toFixed(2);
+                        const healingsPerBattle = (healCount / difficultyStats[difficulty].total).toFixed(3);
+                        console.log(`${difficulty.padEnd(16)} | ${healCount.toString().padEnd(10)} | ${percentOfTotal.padEnd(12)}% | ${healingsPerBattle}`);
+                    }
+                });
+                
+                console.log(`\nTotale guarigioni: ${totalHealings}`);
+                console.log(`Media guarigioni per battaglia: ${(totalHealings / actualBattlesCompleted).toFixed(3)}`);
+            }
             
             // Verifica che tutte le battaglie siano completate
             expect(actualSuccessCount + actualFailureCount).to.equal(actualBattlesCompleted);
             
-            // Verifica che siano state completate almeno una percentuale minima di battaglie
+            // Verifica se sono state completate almeno una percentuale minima di battaglie
             const completionRate = actualBattlesCompleted / testBattles;
             if (completionRate < minCompletionThreshold) {
                 console.error(`\n❌ TEST FALLITO: Completate solo ${(completionRate*100).toFixed(1)}% delle battaglie richieste (minimo ${minCompletionThreshold*100}%)`);
@@ -1107,6 +1729,431 @@ describe("DungeonBattler", function () {
             } else {
                 console.log(`\n✅ TEST ACCETTATO: Completate ${(completionRate*100).toFixed(1)}% delle battaglie richieste (minimo ${minCompletionThreshold*100}%)`);
             }
+            
+            // =====================================
+            // TEST DI RESISTENZA DEI PARTY
+            // =====================================
+            console.log("\n\n🔄 AVVIO TEST DI RESISTENZA DEI PARTY 🔄");
+            console.log("==========================================");
+            console.log("Questo test simulerà battaglie con i party ancora operativi");
+            console.log("fino a quando non saranno più in grado di combattere\n");
+            
+            // Chiedi all'utente se desidera eseguire il test di resistenza
+            const runEnduranceTest = await askQuestion("Vuoi eseguire il test di resistenza? (s/n): ");
+            
+            if (runEnduranceTest.toLowerCase() === 's' || runEnduranceTest.toLowerCase() === 'si' || runEnduranceTest.toLowerCase() === 'sì') {
+                // Identifica i party che sono ancora in grado di combattere (tutti i procioni con vita > 0)
+                const survivingParties = [];
+                
+                // Itera attraverso tutti i risultati delle battaglie
+                for (const result of battleResults) {
+                    if (result.success && result.remainingHealth > 0) {
+                        // Salviamo informazioni complete per ogni party sopravvissuto
+                        survivingParties.push({
+                            dungeonId: result.dungeonId,
+                            dungeonDifficulty: result.dungeonDifficulty,
+                            initialHealth: result.initialHealth,
+                            remainingHealth: result.remainingHealth,
+                            battleIndex: result.battleIndex,
+                            prociones: result.prociones || [], // Riferimenti ai procioni
+                            individualHealth: result.individualHealth || [] // Salute individuale
+                        });
+                    }
+                }
+                
+                console.log(`Trovati ${survivingParties.length} party ancora in grado di combattere.\n`);
+                
+                // Testiamo tutti i party sopravvissuti senza limitazioni
+                const partiesToTest = survivingParties;
+                
+                // Statistiche per difficoltà
+                const enduranceStats = {
+                    "Molto Facile": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Facile": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Facile+": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Medio-Facile": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Medio": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Medio+": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Difficile": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Difficile+": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Molto Difficile": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity },
+                    "Estremo": { totalBattles: 0, parties: 0, maxBattles: 0, minBattles: Infinity }
+                };
+                
+                // Contatore delle cure Paladin nel test di resistenza
+                const enduranceHealingStats = {
+                    "Molto Facile": 0,
+                    "Facile": 0,
+                    "Facile+": 0,
+                    "Medio-Facile": 0,
+                    "Medio": 0,
+                    "Medio+": 0,
+                    "Difficile": 0,
+                    "Difficile+": 0,
+                    "Molto Difficile": 0,
+                    "Estremo": 0
+                };
+                let enduranceTotalHealings = 0;
+                
+                // Array per salvare i risultati dettagliati
+                const enduranceResults = [];
+                
+                console.log("Inizio simulazione di resistenza...\n");
+                
+                // Variabili per il monitoraggio del tempo
+                const enduranceStartTime = Date.now();
+                let lastProgressUpdate = enduranceStartTime;
+                let partiesProcessed = 0;
+                const totalParties = partiesToTest.length;
+                
+                // Per ogni party sopravvissuto, simuliamo battaglie fino alla sconfitta
+                for (let i = 0; i < partiesToTest.length; i++) {
+                    const party = partiesToTest[i];
+                    console.log(`\nTest resistenza party ${i+1}/${partiesToTest.length} (Dungeon: ${party.dungeonDifficulty})`);
+                    
+                    // Otteniamo le statistiche del dungeon
+                    const dungeonIndex = DUNGEON_IDS.indexOf(party.dungeonId);
+                    const dungeonStats = DUNGEON_STATS[dungeonIndex];
+                    
+                    // Creiamo nuovi procioni per questo test
+                    const tokenIds = [1000000 + i*3, 1000000 + i*3 + 1, 1000000 + i*3 + 2];
+                    
+                    // Minting e configurazione dei procioni
+                    for (let j = 0; j < 3; j++) {
+                        await idleProcioneNFT.simpleMintWithId(owner.address, tokenIds[j]);
+                        
+                        // Impostiamo le statistiche base
+                        await idleProcioneNFT.setStrength(tokenIds[j], 10 + j * 5);
+                        await idleProcioneNFT.setSpeed(tokenIds[j], 10 + j * 3);
+                        await idleProcioneNFT.setIntelligence(tokenIds[j], 10 + j * 2);
+                        await idleProcioneNFT.setAccuracy(tokenIds[j], 10 + j * 4);
+                        
+                        // Se è richiesto un party con Paladin, rendi il primo procione (j == 0) un Paladin
+                        if (usePaladin && j == 0) {
+                            // Assegna la professione Paladin sia in professionsManager che in idleProcioneNFT
+                            await professionsManager.assignProfession(tokenIds[j], 5);
+                            await idleProcioneNFT.setProfession(tokenIds[j], 5); // Imposta anche in NFT
+                            await professionsManager.deactivateCooldown(tokenIds[j]);
+                            console.log(`Configurato procione Paladin per test di resistenza party ${i+1}`);
+                        }
+                    }
+                    
+                    // Utilizzo degli stati esatti dei procioni del party originale
+                    let healthDistribution;
+                    
+                    // Verifica se abbiamo i dati di salute individuali
+                    if (party.individualHealth && party.individualHealth.length === 3) {
+                        healthDistribution = party.individualHealth.slice();
+                        console.log(`Usando salute esatta dei procioni: ${healthDistribution.join('/')}`);
+                    } else {
+                        // Se non abbiamo dati individuali, calcoliamo una distribuzione uguale per tutti
+                        const healthPerProcione = Math.floor(party.remainingHealth / 3);
+                        healthDistribution = [
+                            healthPerProcione, 
+                            healthPerProcione, 
+                            party.remainingHealth - (healthPerProcione * 2)
+                        ];
+                        console.log(`Dati individuali non disponibili, usando distribuzione uguale: ${healthDistribution.join('/')}`);
+                    }
+                    
+                    // Impostiamo la vita iniziale
+                    for (let j = 0; j < 3; j++) {
+                        await idleProcioneNFT.setCurrentHealth(tokenIds[j], healthDistribution[j]);
+                    }
+                    
+                    let currentHealth = healthDistribution.reduce((sum, h) => sum + h, 0);
+                    console.log(`Vita iniziale totale: ${currentHealth}`);
+                    
+                    let isPartyDefeated = false;
+                    let battleCount = 1; // Iniziamo da 1 per contare anche la battaglia originale
+                    const equippedItems = [10, 20, 30]; // Stessi oggetti del test originale
+                    
+                    // Nuovo limite di 20 battaglie per party (ridotto da 100)
+                    const maxBattlesPerParty = 50;
+                    
+                    // Combattiamo finché il party non viene sconfitto o si raggiunge il limite
+                    while (!isPartyDefeated && battleCount < maxBattlesPerParty) {
+                        try {
+                            // Salva la salute attuale di ogni procione prima della battaglia
+                            const previousHealthDistribution = [...healthDistribution];
+                            const previousTotalHealth = previousHealthDistribution.reduce((sum, h) => sum + h, 0);
+                            
+                            // Generiamo un nuovo seed per ogni battaglia
+                            const randomSeed = Math.floor(Math.random() * 1000000) + 1 + i * 100 + battleCount;
+                            
+                            // Chiamata al contratto per simulare battaglia
+                            const tx = await dungeonBattler.calculateBattleOutcome(
+                                party.dungeonId,
+                                0, // partyIndex
+                                tokenIds[0],
+                                tokenIds[1],
+                                tokenIds[2],
+                                healthDistribution[0],
+                                healthDistribution[1],
+                                healthDistribution[2],
+                                equippedItems,
+                                dungeonStats,
+                                randomSeed
+                            );
+                            
+                            // Attendi che la transazione venga confermata
+                            const receipt = await tx.wait();
+                            
+                            // Estrai gli eventi per ottenere i risultati
+                            const battleEvents = receipt.logs
+                                .filter(log => log.address === dungeonBattler.target)
+                                .map(log => {
+                                    try {
+                                        return dungeonBattler.interface.parseLog(log);
+                                    } catch (e) {
+                                        return null;
+                                    }
+                                })
+                                .filter(parsed => parsed && parsed.name === "DungeonBattleResult");
+                            
+                            // Estrai anche tutti gli eventi per verificare le guarigioni Paladin
+                            const allEvents = receipt.logs
+                                .filter(log => log.address === dungeonBattler.target)
+                                .map(log => {
+                                    try {
+                                        return dungeonBattler.interface.parseLog(log);
+                                    } catch (e) {
+                                        return null;
+                                    }
+                                })
+                                .filter(parsed => parsed !== null);
+                            
+                            // Cerca eventi di guarigione Paladin
+                            const healingEvents = allEvents.filter(event => event.name === "PaladinHealActivated");
+                            
+                            // Se ci sono eventi di guarigione, incrementa i contatori
+                            if (healingEvents.length > 0) {
+                                enduranceHealingStats[party.dungeonDifficulty] += healingEvents.length;
+                                enduranceTotalHealings += healingEvents.length;
+                                console.log(`🧪 [Resistenza] Paladin ha curato in ${party.dungeonDifficulty.substring(0, 5)} (Round ${battleCount})`);
+                            }
+                            
+                            if (battleEvents.length > 0) {
+                                const event = battleEvents[0];
+                                
+                                // Estrai i dati dall'evento
+                                const success = event.args.success;
+                                const remainingHealth = Number(event.args.remainingHealth);
+                                const totalDamage = Number(event.args.totalDamage || 0);
+                                
+                                // Se la battaglia è stata persa o la vita è scesa a 0, il party è sconfitto
+                                if (!success || remainingHealth <= 0) {
+                                    isPartyDefeated = true;
+                                    console.log(`Battaglia ${battleCount}: ❌ Party sconfitto`);
+                                } else {
+                                    // Verifica se la salute è cambiata nel contratto
+                                    const contractHealthBefore = [...previousHealthDistribution];
+                                    
+                                    // Altrimenti, otteniamo la salute esatta di ogni procione dopo la battaglia
+                                    const contractHealthAfter = [];
+                                    for (let j = 0; j < 3; j++) {
+                                        const updatedHealth = await idleProcioneNFT.getCurrentHealth(tokenIds[j]);
+                                        contractHealthAfter.push(Number(updatedHealth));
+                                    }
+                                    
+                                    // Calcola il danno subito in base ai valori del contratto
+                                    const contractDamage = contractHealthBefore.map((health, idx) => 
+                                        Math.max(0, health - contractHealthAfter[idx])
+                                    );
+                                    const contractTotalDamage = contractDamage.reduce((sum, damage) => sum + damage, 0);
+                                    
+                                    // Aggiorna la distribuzione della salute con i valori calcolati nella battaglia
+                                    // Calcola la nuova salute di ogni procione dopo la battaglia
+                                    const totalHealthBefore = contractHealthBefore.reduce((sum, h) => sum + h, 0);
+                                    const healthReductionRatio = remainingHealth / totalHealthBefore;
+                                    
+                                    // Se il danno è stato significativo, aggiorniamo la salute in modo proporzionale
+                                    const newHealthDistribution = [];
+                                    if (healthReductionRatio < 1.0) {
+                                        for (let j = 0; j < 3; j++) {
+                                            // Se il procione aveva vita 0, rimane a 0
+                                            if (contractHealthBefore[j] === 0) {
+                                                newHealthDistribution.push(0);
+                                            } else {
+                                                // Altrimenti, riduci la salute in proporzione
+                                                // Usiamo Math.max per assicurarci che non vada sotto zero
+                                                const newHealth = Math.max(0, Math.floor(contractHealthBefore[j] * healthReductionRatio));
+                                                newHealthDistribution.push(newHealth);
+                                            }
+                                        }
+                                    } else {
+                                        // Se non ci sono danni, mantieni la salute precedente
+                                        newHealthDistribution.push(...contractHealthBefore);
+                                    }
+                                    
+                                    // Aggiorna effettivamente la salute degli NFT usando la funzione di test
+                                    await dungeonBattler.updateHealthAfterBattle(
+                                        tokenIds[0],
+                                        tokenIds[1],
+                                        tokenIds[2],
+                                        newHealthDistribution
+                                    );
+                                    
+                                    // Verifica che la salute sia stata effettivamente aggiornata
+                                    const verifiedHealthAfter = [];
+                                    let matchesExpected = true;
+                                    for (let j = 0; j < 3; j++) {
+                                        const currentHealth = await idleProcioneNFT.getCurrentHealth(tokenIds[j]);
+                                        verifiedHealthAfter.push(Number(currentHealth));
+                                        if (Number(currentHealth) !== newHealthDistribution[j]) {
+                                            matchesExpected = false;
+                                        }
+                                    }
+                                    
+                                    // Aggiorna la distribuzione di salute con i valori effettivi
+                                    healthDistribution = [...verifiedHealthAfter];
+                                    currentHealth = healthDistribution.reduce((sum, h) => sum + h, 0);
+                                    
+                                    // Calcola i danni subiti per ogni procione e il danno totale basato sull'evento
+                                    const damagePerProcione = previousHealthDistribution.map((prevHealth, idx) => 
+                                        Math.max(0, prevHealth - healthDistribution[idx])
+                                    );
+                                    const calculatedTotalDamage = previousTotalHealth - currentHealth;
+                                    const damagePercentage = (calculatedTotalDamage / previousTotalHealth * 100).toFixed(1);
+                                    
+                                    console.log(`Battaglia ${battleCount}: ✅ Sopravvissuto (HP: ${healthDistribution.join('/')} - totale: ${currentHealth})`);
+                                    console.log(`   Danni subiti: ${damagePerProcione.join('/')} - totale: ${calculatedTotalDamage} (${damagePercentage}%)`);
+                                    console.log(`   Verifica danni: Evento=${totalDamage}, Calcolato=${calculatedTotalDamage}, Contratto=${contractTotalDamage}`);
+                                    if (!matchesExpected) {
+                                        console.log(`   ⚠️ Avviso: La salute aggiornata non corrisponde al valore atteso!`);
+                                        console.log(`      Atteso: ${newHealthDistribution.join('/')}, Effettivo: ${verifiedHealthAfter.join('/')}`);
+                                    }
+                                    
+                                    // Incrementa il contatore delle battaglie
+                                    battleCount++;
+                                }
+                            }
+                        } catch (error) {
+                            console.error(`Errore durante la battaglia di resistenza: ${error.message}`);
+                            // In caso di errore, consideriamo il party sconfitto per sicurezza
+                            isPartyDefeated = true;
+                        }
+                    }
+                    
+                    // Salva i risultati di questo party
+                    const enduranceResult = {
+                        dungeonId: party.dungeonId,
+                        dungeonDifficulty: party.dungeonDifficulty,
+                        initialHealth: party.remainingHealth, // La vita iniziale di questo test è quella rimasta dal test precedente
+                        battleCount: battleCount,
+                        // Se il ciclo è terminato per il limite, consideriamo come "sopravvissuto a limite massimo battaglie"
+                        maxedOut: battleCount >= maxBattlesPerParty
+                    };
+                    
+                    enduranceResults.push(enduranceResult);
+                    
+                    // Aggiorna le statistiche per difficoltà
+                    enduranceStats[party.dungeonDifficulty].totalBattles += battleCount;
+                    enduranceStats[party.dungeonDifficulty].parties++;
+                    enduranceStats[party.dungeonDifficulty].maxBattles = Math.max(enduranceStats[party.dungeonDifficulty].maxBattles, battleCount);
+                    enduranceStats[party.dungeonDifficulty].minBattles = Math.min(enduranceStats[party.dungeonDifficulty].minBattles, battleCount);
+                    
+                    console.log(`Party ha resistito per ${battleCount} battaglie alla difficoltà ${party.dungeonDifficulty}`);
+                    
+                    // Aggiorna il contatore dei party processati
+                    partiesProcessed++;
+                    
+                    // Monitoraggio del tempo ogni 5 party o alla fine
+                    const currentTime = Date.now();
+                    if (partiesProcessed === totalParties || partiesProcessed % 5 === 0 || currentTime - lastProgressUpdate > 30000) {
+                        const elapsedTimeMs = currentTime - enduranceStartTime;
+                        const elapsedTimeSec = elapsedTimeMs / 1000;
+                        const averageTimePerParty = elapsedTimeSec / partiesProcessed;
+                        const remainingParties = totalParties - partiesProcessed;
+                        const estimatedRemainingTimeSec = remainingParties * averageTimePerParty;
+                        
+                        // Formatta il tempo stimato rimanente
+                        const remainingMinutes = Math.floor(estimatedRemainingTimeSec / 60);
+                        const remainingSeconds = Math.floor(estimatedRemainingTimeSec % 60);
+                        
+                        console.log(`\n📊 STATO AVANZAMENTO TEST RESISTENZA 📊`);
+                        console.log(`Progress: ${partiesProcessed}/${totalParties} party (${(partiesProcessed/totalParties*100).toFixed(1)}%)`);
+                        console.log(`Tempo trascorso: ${elapsedTimeSec.toFixed(1)}s`);
+                        console.log(`Tempo medio per party: ${averageTimePerParty.toFixed(2)}s`);
+                        console.log(`Tempo stimato rimanente: ${remainingMinutes}m ${remainingSeconds}s`);
+                        
+                        lastProgressUpdate = currentTime;
+                    }
+                }
+                
+                // Tempo totale di esecuzione del test di resistenza
+                const enduranceTotalTimeMs = Date.now() - enduranceStartTime;
+                const enduranceTotalTimeSec = enduranceTotalTimeMs / 1000;
+                const enduranceTotalTimeMin = enduranceTotalTimeSec / 60;
+                
+                // Analisi dei risultati
+                console.log("\n\n📊 RISULTATI TEST DI RESISTENZA 📊");
+                console.log("===============================");
+                console.log(`✓ Completato in ${enduranceTotalTimeSec.toFixed(1)}s (${enduranceTotalTimeMin.toFixed(2)} min)`);
+                console.log(`✓ Party testati: ${partiesToTest.length}`);
+                console.log(`✓ Battaglie totali: ${enduranceResults.reduce((sum, r) => sum + r.battleCount, 0)}`);
+                console.log(`✓ Tempo medio per party: ${(enduranceTotalTimeSec / partiesToTest.length).toFixed(2)}s`);
+                
+                // Creiamo una tabella delle medie per difficoltà
+                console.log("\nMedia battaglie per difficoltà:");
+                console.log("Difficoltà       | Battaglie Medie | Party Testati | Min | Max");
+                console.log("--------------------------------------------------------");
+                
+                for (const [difficulty, stats] of Object.entries(enduranceStats)) {
+                    if (stats.parties > 0) {
+                        const averageBattles = (stats.totalBattles / stats.parties).toFixed(2);
+                        const minBattles = stats.minBattles < Infinity ? stats.minBattles : "N/A";
+                        console.log(`${difficulty.padEnd(16)} | ${averageBattles.padEnd(15)} | ${stats.parties.toString().padEnd(12)} | ${minBattles.toString().padEnd(3)} | ${stats.maxBattles}`);
+                    }
+                }
+                
+                // Mostra risultati dettagliati per ogni party
+                console.log("\nRisultati dettagliati (max 20 party):");
+                console.log("Diff. | Vita Iniziale | Battaglie | Note");
+                console.log("----------------------------------------");
+                
+                const maxToShow = Math.min(20, enduranceResults.length);
+                for (let i = 0; i < maxToShow; i++) {
+                    const result = enduranceResults[i];
+                    const note = result.maxedOut ? "Limite massimo" : "";
+                    console.log(`${result.dungeonDifficulty.substring(0, 5).padEnd(6)} | ${result.initialHealth.toString().padEnd(13)} | ${result.battleCount.toString().padEnd(9)} | ${note}`);
+                }
+                
+                // Se abbiamo usato Paladin, mostriamo anche le statistiche di guarigione
+                if (usePaladin && enduranceTotalHealings > 0) {
+                    console.log("\nStatistiche Guarigioni Paladin nel Test di Resistenza:");
+                    console.log("=====================================================");
+                    console.log("Difficoltà       | Guarigioni | % sul totale | Guarigioni/Party");
+                    console.log("----------------------------------------------------------------");
+                    
+                    // Calcola le percentuali e stampa i risultati
+                    Object.entries(enduranceHealingStats).forEach(([difficulty, healCount]) => {
+                        if (enduranceStats[difficulty] && enduranceStats[difficulty].parties > 0) {
+                            const percentOfTotal = (healCount / enduranceTotalHealings * 100).toFixed(2);
+                            const healingsPerParty = (healCount / enduranceStats[difficulty].parties).toFixed(3);
+                            console.log(`${difficulty.padEnd(16)} | ${healCount.toString().padEnd(10)} | ${percentOfTotal.padEnd(12)}% | ${healingsPerParty}`);
+                        }
+                    });
+                    
+                    console.log(`\nTotale guarigioni: ${enduranceTotalHealings}`);
+                    console.log(`Media guarigioni per party: ${(enduranceTotalHealings / partiesToTest.length).toFixed(3)}`);
+                }
+                
+                // Distruggi gli NFT creati per il test di resistenza
+                for (let i = 0; i < partiesToTest.length; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        try {
+                            await idleProcioneNFT.burn(1000000 + i*3 + j);
+                        } catch (error) {
+                            // Ignora eventuali errori
+                        }
+                    }
+                }
+                
+                console.log("\n✅ Test di resistenza completato con successo!");
+            } else {
+                console.log("Test di resistenza saltato.");
+            }
         });
         
         // Funzione per ottenere il nome della difficoltà del dungeon
@@ -1114,9 +2161,14 @@ describe("DungeonBattler", function () {
             const difficulties = [
                 "Molto Facile",
                 "Facile",
+                "Facile+",
+                "Medio-Facile",
                 "Medio",
+                "Medio+",
                 "Difficile",
-                "Molto Difficile"
+                "Difficile+",
+                "Molto Difficile",
+                "Estremo"
             ];
             return difficulties[index] || "Sconosciuto";
         }

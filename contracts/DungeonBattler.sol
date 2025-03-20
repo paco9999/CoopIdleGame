@@ -23,6 +23,8 @@ interface IIdleProcioneNFT {
     function getSpeed(uint256 tokenId) external view returns (uint256);
     function getIntelligence(uint256 tokenId) external view returns (uint256);
     function getAccuracy(uint256 tokenId) external view returns (uint256);
+    function modifyCurrentHealth(uint256 tokenId, uint256 amount, bool increase) external;
+    function getProfessionInfo(uint256 tokenId) external view returns (uint8, uint256, uint256);
 }
 
 /**
@@ -49,6 +51,15 @@ interface IRandomnessConsumer {
         uint256 timestamp,
         bytes calldata signature
     ) external view returns (bool);
+}
+
+/**
+ * @title IProfessionsManager
+ * @dev Interfaccia per interagire con il contratto ProfessionsManager
+ */
+interface IProfessionsManager {
+    function isPaladinOnCooldown(uint256 tokenId) external view returns (bool);
+    function activatePaladinCooldown(uint256 tokenId) external;
 }
 
 /**
@@ -120,6 +131,7 @@ contract DungeonBattler is Ownable {
     IIdleProcioneNFT public idleProcioneNFT;
     ICraftingManager public craftingManager;
     IRandomnessConsumer public randomnessConsumer;
+    IProfessionsManager public professionsManager;
     
     // Parametri di bilanciamento base
     uint256 public baseXpReward = 100;         // XP base per completamento dungeon
@@ -137,10 +149,24 @@ contract DungeonBattler is Ownable {
         uint256 indexed partyIndex,
         bool success,
         uint256 remainingHealth,
-        uint256 damageDealt,
         uint256 xpEarned,
         uint256 comEarned,
-        uint256[] materialsEarned
+        uint256 totalDamage,
+        bool trapTriggered
+    );
+    
+    event PaladinHealActivated(
+        uint256 indexed procione1Id,
+        uint256 indexed dungeonId,
+        uint256 healAmount,
+        uint256 partyHealth,
+        uint256 healthThreshold
+    );
+    
+    event PaladinCheckEvent(
+        uint256 indexed procionId,
+        bool isPaladin,
+        bool isOnCooldown
     );
     
     event BattleDetailedResult(
@@ -155,9 +181,21 @@ contract DungeonBattler is Ownable {
     event IdleProcioneNFTUpdated(address indexed newIdleProcioneNFT);
     event CraftingManagerUpdated(address indexed newCraftingManager);
     event RandomnessConsumerUpdated(address indexed newRandomnessConsumer);
+    event ProfessionsManagerUpdated(address indexed newProfessionsManager);
     event BaseRewardParametersUpdated(uint256 baseXp, uint256 baseCOM);
     event DungeonRewardsUpdated(uint256 indexed dungeonId, uint256 xpReward, uint256 comReward);
     event DungeonRewardsRemoved(uint256 indexed dungeonId);
+    
+    event PaladinHealConditionCheck(
+        uint256 currentHealth,
+        uint256 healthThreshold,
+        bool hasPaladin,
+        bool isPaladinActive,
+        bool isPartyAlive,
+        bool isBelowThreshold,
+        bool isCooldownManagerActive,
+        bool isPaladinOnCooldown
+    );
     
     // ============ Errors ============
     
@@ -166,6 +204,7 @@ contract DungeonBattler is Ownable {
     error InvalidIdleProcioneNFT();
     error InvalidCraftingManager();
     error InvalidRandomnessConsumer();
+    error InvalidProfessionsManager();
     error InvalidDungeonParameters();
     error InvalidPartyParameters();
     error InvalidRandomSeed();
@@ -250,6 +289,16 @@ contract DungeonBattler is Ownable {
     }
     
     /**
+     * @dev Aggiorna l'indirizzo del contratto ProfessionsManager
+     * @param _newProfessionsManager Nuovo indirizzo del contratto
+     */
+    function updateProfessionsManager(address _newProfessionsManager) external onlyOwner {
+        if (_newProfessionsManager == address(0)) revert InvalidProfessionsManager();
+        professionsManager = IProfessionsManager(_newProfessionsManager);
+        emit ProfessionsManagerUpdated(_newProfessionsManager);
+    }
+    
+    /**
      * @dev Aggiorna i parametri base di ricompensa
      */
     function updateBaseRewardParameters(
@@ -293,6 +342,14 @@ contract DungeonBattler is Ownable {
         customRewardsEnabled[dungeonId] = false;
         
         emit DungeonRewardsRemoved(dungeonId);
+    }
+    
+    /**
+     * @notice Imposta l'indirizzo del ProfessionsManager
+     * @param _professionsManager Nuovo indirizzo del ProfessionsManager
+     */
+    function setProfessionsManager(address _professionsManager) external onlyOwner {
+        professionsManager = IProfessionsManager(_professionsManager);
     }
     
     // ============ Battle Logic ============
@@ -356,6 +413,7 @@ contract DungeonBattler is Ownable {
         
         // Array della salute attuale dei procioni
         uint256[3] memory currentHealth = [procione1Health, procione2Health, procione3Health];
+        uint256[3] memory prociones = [procione1Id, procione2Id, procione3Id];
         
         // Calcola il numero di attacchi basato sulla Duration
         uint256 attackCount = calculateAttackCount(duration, randomSeed);
@@ -376,6 +434,24 @@ contract DungeonBattler is Ownable {
         // Esegui la simulazione dell'avventura
         uint256 totalDamage = 0;
         uint256 trapCount = 0;
+        
+        // Variabili per Paladin
+        bool hasPaladin = false;
+        uint256 paladinId = 0;
+        
+        // Verifica se c'è un Paladin nel party
+        for (uint256 i = 0; i < 3; i++) {
+            (uint8 profession,,) = idleProcioneNFT.getProfessionInfo(prociones[i]);
+            if (profession == 5) { // 5 è il valore per Paladin in StatsLib.Professions
+                hasPaladin = true;
+                paladinId = prociones[i];
+                // Emetti un evento di debug
+                bool isOnCooldown = address(professionsManager) != address(0) && 
+                                   professionsManager.isPaladinOnCooldown(paladinId);
+                emit PaladinCheckEvent(paladinId, true, isOnCooldown);
+                break;
+            }
+        }
         
         // Prima verifica se si incontra una trappola (una sola volta per dungeon)
         uint256 trapSeed = uint256(keccak256(abi.encodePacked(randomSeed, "trap")));
@@ -411,10 +487,28 @@ contract DungeonBattler is Ownable {
                     }
                 }
             }
+            
+            // Verifica se è necessario attivare la cura del Paladin dopo il danno da trappola
+            uint256 currentTotalHealth = currentHealth[0] + currentHealth[1] + currentHealth[2];
+            if (hasPaladin && paladinId != 0 && 
+                currentTotalHealth > 0 && 
+                currentTotalHealth < (totalInitialHealth * 25) / 100) {
+                
+                // Verifica se il Paladin non è in cooldown
+                if (address(professionsManager) != address(0) && 
+                    !professionsManager.isPaladinOnCooldown(paladinId)) {
+                    healParty(dungeonId, partyIndex, paladinId, procione1Id, procione2Id, procione3Id, totalInitialHealth, currentHealth);
+                }
+            }
         }
         
         // Poi gestisci gli attacchi nemici
         for (uint256 i = 0; i < attackCount; i++) {
+            // Verifica se tutti i procioni sono morti
+            if (currentHealth[0] == 0 && currentHealth[1] == 0 && currentHealth[2] == 0) {
+                break;
+            }
+            
             // Usa un hash diverso per ogni attacco
             uint256 attackSeed = uint256(keccak256(abi.encodePacked(randomSeed, i)));
             
@@ -451,9 +545,11 @@ contract DungeonBattler is Ownable {
             
             // Applica il danno, gestendo il caso LETHAL
             if (damageType == DamageType.LETHAL) {
-                // Il danno letale azzera completamente la salute del procione colpito
-                totalDamage += currentHealth[targetIndex];
-                currentHealth[targetIndex] = 0;
+                // Il danno letale riduce la salute a 1 (non uccide direttamente)
+                if (currentHealth[targetIndex] > 1) {
+                    totalDamage += (currentHealth[targetIndex] - 1);
+                    currentHealth[targetIndex] = 1;
+                }
             } else {
                 // Per gli altri tipi di danno, applica il danno normalmente
                 uint256 actualDamage = damageAmount;
@@ -463,6 +559,34 @@ contract DungeonBattler is Ownable {
                 
                 totalDamage += actualDamage;
                 currentHealth[targetIndex] -= actualDamage;
+            }
+            
+            // Calcola la salute totale corrente dopo l'attacco
+            uint256 currentTotalHealth = currentHealth[0] + currentHealth[1] + currentHealth[2];
+            
+            // Emetti evento di debug per la condizione di guarigione
+            uint256 healthThreshold = (totalInitialHealth * 25) / 100;
+            emit PaladinHealConditionCheck(
+                currentTotalHealth,
+                healthThreshold,
+                hasPaladin,
+                paladinId != 0,
+                currentTotalHealth > 0,
+                currentTotalHealth < healthThreshold,
+                address(professionsManager) != address(0),
+                address(professionsManager) != address(0) ? professionsManager.isPaladinOnCooldown(paladinId) : false
+            );
+            
+            // Controlla se il Paladin deve attivare la sua abilità di cura
+            if (hasPaladin && paladinId != 0 && 
+                currentTotalHealth > 0 && 
+                currentTotalHealth < (totalInitialHealth * 25) / 100) {
+                
+                // Verifica se il Paladin non è in cooldown
+                if (address(professionsManager) != address(0) && 
+                    !professionsManager.isPaladinOnCooldown(paladinId)) {
+                    healParty(dungeonId, partyIndex, paladinId, procione1Id, procione2Id, procione3Id, totalInitialHealth, currentHealth);
+                }
             }
         }
         
@@ -498,13 +622,74 @@ contract DungeonBattler is Ownable {
             partyIndex,
             success,
             remainingHealth,
-            totalDamage,
             xpEarned,
             comEarned,
-            materialsEarned
+            totalDamage,
+            trapTriggered
         );
         
         return (success, remainingHealth, xpEarned, comEarned, materialsEarned);
+    }
+    
+    /**
+     * @dev Applica l'effetto di cura del Paladin al party
+     * @param dungeonId ID del dungeon
+     * @param partyIndex Indice del party
+     * @param paladinId ID del procione Paladin
+     * @param procione1Id ID del primo procione
+     * @param procione2Id ID del secondo procione  
+     * @param procione3Id ID del terzo procione
+     * @param totalInitialHealth Salute totale iniziale del party
+     * @param currentHealth Array con la salute attuale dei procioni, che verrà aggiornato
+     */
+    function healParty(
+        uint256 dungeonId,
+        uint256 partyIndex,
+        uint256 paladinId,
+        uint256 procione1Id,
+        uint256 procione2Id,
+        uint256 procione3Id,
+        uint256 totalInitialHealth,
+        uint256[3] memory currentHealth
+    ) internal {
+        // Applica la cura (20% della salute totale iniziale)
+        uint256 healingAmount = (totalInitialHealth * 20) / 100;
+        
+        // Distribuisci la cura tra i procioni ancora vivi
+        uint256 aliveCount = 0;
+        for (uint256 j = 0; j < 3; j++) {
+            if (currentHealth[j] > 0) {
+                aliveCount++;
+            }
+        }
+        
+        if (aliveCount > 0) {
+            uint256 healingPerProcione = healingAmount / aliveCount;
+            
+            for (uint256 j = 0; j < 3; j++) {
+                if (currentHealth[j] > 0) {
+                    // Calcola la salute massima di questo procione
+                    uint256 maxHealth = idleProcioneNFT.getBaseHealth(j == 0 ? procione1Id : (j == 1 ? procione2Id : procione3Id));
+                    
+                    // Non superare la salute massima
+                    if (currentHealth[j] + healingPerProcione > maxHealth) {
+                        healingPerProcione = maxHealth - currentHealth[j];
+                    }
+                    
+                    currentHealth[j] += healingPerProcione;
+                }
+            }
+        }
+        
+        // Attiva il cooldown del Paladin
+        professionsManager.activatePaladinCooldown(paladinId);
+        
+        // Calcola la salute totale attuale
+        uint256 currentTotalHealth = currentHealth[0] + currentHealth[1] + currentHealth[2];
+        uint256 healthThreshold = (totalInitialHealth * 25) / 100;
+        
+        // Emetti evento di cura
+        emit PaladinHealActivated(paladinId, dungeonId, healingAmount, currentTotalHealth, healthThreshold);
     }
     
     // ============ Battle Calculation Functions ============
@@ -711,5 +896,54 @@ contract DungeonBattler is Ownable {
         }
         
         return materials;
+    }
+    
+    // ============ Owner/Test Functions ============
+    
+    /**
+     * @dev Funzione per aggiornare la salute dei procioni dopo una battaglia, per uso nei test
+     * @notice Questa funzione deve essere utilizzata SOLO nei test
+     * @param procione1Id ID del primo procione
+     * @param procione2Id ID del secondo procione
+     * @param procione3Id ID del terzo procione
+     * @param currentHealth Array con la salute aggiornata dei tre procioni
+     */
+    function updateHealthAfterBattle(
+        uint256 procione1Id,
+        uint256 procione2Id,
+        uint256 procione3Id,
+        uint256[3] calldata currentHealth
+    ) external onlyDungeonManager {
+        // Aggiorna la salute dei procioni nell'NFT
+        uint256 currentProcione1Health = idleProcioneNFT.getCurrentHealth(procione1Id);
+        uint256 currentProcione2Health = idleProcioneNFT.getCurrentHealth(procione2Id);
+        uint256 currentProcione3Health = idleProcioneNFT.getCurrentHealth(procione3Id);
+        
+        // Aggiorna procione 1
+        if (currentHealth[0] > currentProcione1Health) {
+            uint256 healthToAdd = currentHealth[0] - currentProcione1Health;
+            idleProcioneNFT.modifyCurrentHealth(procione1Id, healthToAdd, true); // incrementa
+        } else if (currentHealth[0] < currentProcione1Health) {
+            uint256 healthToSubtract = currentProcione1Health - currentHealth[0];
+            idleProcioneNFT.modifyCurrentHealth(procione1Id, healthToSubtract, false); // decrementa
+        }
+        
+        // Aggiorna procione 2
+        if (currentHealth[1] > currentProcione2Health) {
+            uint256 healthToAdd = currentHealth[1] - currentProcione2Health;
+            idleProcioneNFT.modifyCurrentHealth(procione2Id, healthToAdd, true); // incrementa
+        } else if (currentHealth[1] < currentProcione2Health) {
+            uint256 healthToSubtract = currentProcione2Health - currentHealth[1];
+            idleProcioneNFT.modifyCurrentHealth(procione2Id, healthToSubtract, false); // decrementa
+        }
+        
+        // Aggiorna procione 3
+        if (currentHealth[2] > currentProcione3Health) {
+            uint256 healthToAdd = currentHealth[2] - currentProcione3Health;
+            idleProcioneNFT.modifyCurrentHealth(procione3Id, healthToAdd, true); // incrementa
+        } else if (currentHealth[2] < currentProcione3Health) {
+            uint256 healthToSubtract = currentProcione3Health - currentHealth[2];
+            idleProcioneNFT.modifyCurrentHealth(procione3Id, healthToSubtract, false); // decrementa
+        }
     }
 } 

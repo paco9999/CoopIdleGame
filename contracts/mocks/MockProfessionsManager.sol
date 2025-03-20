@@ -17,11 +17,15 @@ contract MockProfessionsManager {
     mapping(uint256 => address) private _tokenOwners; // tokenId => owner
     uint256[] private _medicIds; // Array di tutti i medici
     uint256[] private _artisanIds; // Array di tutti gli artigiani
+    uint256[] private _paladinIds; // Array di tutti i paladin
     address public craftingManager;
 
     // Costanti per le professioni allineate con StatsLib
     uint256 public constant ARTISAN = 1;
     uint256 public constant MEDIC = 2;
+    uint256 public constant THIEF = 3;
+    uint256 public constant GATHERER = 4;
+    uint256 public constant PALADIN = 5;
 
     function assignProfession(uint256 tokenId, uint256 profession) external {
         _professions[tokenId] = profession;
@@ -31,6 +35,8 @@ contract MockProfessionsManager {
             _artisanIds.push(tokenId);
             _craftingSlots[tokenId] = new bool[](5); // Inizializza con 5 slot
             _availableSlots[tokenId] = 5;
+        } else if (profession == PALADIN) {
+            _paladinIds.push(tokenId);
         }
     }
 
@@ -73,6 +79,8 @@ contract MockProfessionsManager {
     function getMembersByProfession(uint256 profession) external view returns (uint256[] memory) {
         if (profession == MEDIC) {
             return _medicIds;
+        } else if (profession == PALADIN) {
+            return _paladinIds;
         }
         return new uint256[](0);
     }
@@ -128,5 +136,35 @@ contract MockProfessionsManager {
 
     function setCraftingManager(address _craftingManager) external {
         craftingManager = _craftingManager;
+    }
+
+    // Funzioni specifiche per Paladin
+    function isPaladinOnCooldown(uint256 tokenId) external view returns (bool) {
+        require(_professions[tokenId] == PALADIN, "Not a paladin");
+        return _cooldowns[tokenId];
+    }
+
+    function activatePaladinCooldown(uint256 tokenId) external {
+        require(_professions[tokenId] == PALADIN, "Not a paladin");
+        _cooldowns[tokenId] = true;
+    }
+
+    function getPaladinCooldown(uint256 level) external pure returns (uint256) {
+        if (level <= 4) return 24 * 3600;  // 24 ore
+        if (level <= 9) return 20 * 3600;  // 20 ore
+        if (level <= 14) return 16 * 3600; // 16 ore
+        if (level <= 19) return 12 * 3600; // 12 ore
+        if (level == 20) return 6 * 3600;  // 6 ore
+        return 24 * 3600; // Default: 24 ore
+    }
+
+    /**
+     * @dev Forza l'assegnazione di una professione a un token per scopi di test
+     * @param tokenId ID del token
+     * @param professionId ID della professione
+     */
+    function forceSetProfession(uint256 tokenId, uint8 professionId) external {
+        // Per scopi di test, forza l'assegnazione di una professione
+        _professions[tokenId] = professionId;
     }
 } 
