@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./GameConstants.sol";
+
 /// @title StatsLib
 /// @notice Libreria per la gestione delle statistiche dei procioni
 /// @dev Implementa un sistema di bit-packing per ottimizzare lo storage delle statistiche
@@ -15,56 +17,8 @@ library StatsLib {
         PALADIN        //  5
     }
 
-    // ========== Constants ==========
-    // Maschere per i campi delle statistiche
-    uint256 constant XP_MASK = 0x1FFFF;        // 0-16 (17 bit)
-    uint256 constant LEVEL_MASK = 0xFF;        // 17-24
-    uint256 constant HEALTH_MASK = 0xFF;       // 25-32
-    uint256 constant STRENGTH_MASK = 0xFF;     // 33-40
-    uint256 constant SPEED_MASK = 0xFF;        // 41-48
-    uint256 constant INTELLIGENCE_MASK = 0xFF; // 49-56
-    uint256 constant ACCURACY_MASK = 0xFF;     // 57-64
-    uint256 constant CURRENT_HEALTH_MASK = 0xFF; // 65-72
-    uint256 constant BREEDING_MASK = 0xFF;     // 80-87
-    uint256 public constant GENETICS_MASK = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    uint256 constant CLASS_MASK = 0xFF;        // 128-135
-    uint256 constant FACTION_MASK = 0xFF;      // 136-143
-    uint256 constant PROFESSION_MASK = 0xF;    // 144-147 (4 bit)
-    uint256 constant PROFESSIONLVL_MASK = 0x1F; // 148-152 (5 bit)
-    uint256 constant PROFESSIONEXP_MASK = 0xFFFF; // 153-168 (16 bit)
-    uint256 constant DUNGEON_STATUS_MASK = 0x1; // 169 (1 bit)
-
-    // Posizioni dei campi nel valore a 256 bit
-    uint256 constant XP_POSITION = 0;
-    uint256 constant LEVEL_POSITION = 17;
-    uint256 constant HEALTH_POSITION = 25;
-    uint256 constant STRENGTH_POSITION = 33;
-    uint256 constant SPEED_POSITION = 41;
-    uint256 constant INTELLIGENCE_POSITION = 49;
-    uint256 constant ACCURACY_POSITION = 57;
-    uint256 constant CURRENT_HEALTH_POSITION = 65;
-    uint256 constant BREEDING_POSITION = 80;
-    uint256 public constant GENETICS_POSITION = 64;
-    uint256 constant CLASS_POSITION = 128;
-    uint256 constant FACTION_POSITION = 136;
-    uint256 constant PROFESSION_POSITION = 144;
-    uint256 constant PROFESSIONLVL_POSITION = 148;
-    uint256 constant PROFESSIONEXP_POSITION = 153;
-    uint256 constant DUNGEON_STATUS_POSITION = 169;
-
-    // Valori iniziali delle statistiche
-    uint256 constant INITIAL_XP = 0;
-    uint256 constant INITIAL_LEVEL = 1;
-    uint256 constant INITIAL_HEALTH = 100;
-    uint256 constant INITIAL_STATS = 10;
-    uint256 constant INITIAL_BREEDING = 0;
-
-    // Costanti per i limiti
-    uint256 public constant MAX_LEVEL = 100;
-    uint256 public constant MAX_XP = 90000;
-    uint256 public constant MAX_BREEDING_SLOTS = 5;
-    uint256 public constant MAX_BREEDING_COUNT = 10;
-    uint256 public constant MAX_RARITY = 5;
+    // ========== Utilizzo di costanti da GameConstants ==========
+    using GameConstants for uint256;
 
     // ========== Public Functions ==========
     /// @notice Crea i dati iniziali per un nuovo procione
@@ -73,16 +27,16 @@ library StatsLib {
         uint256 data = 0;
         
         // Imposta i valori iniziali per ogni campo
-        data = updateField(data, INITIAL_XP, XP_MASK, XP_POSITION);
-        data = updateField(data, INITIAL_LEVEL, LEVEL_MASK, LEVEL_POSITION);
-        data = updateField(data, INITIAL_HEALTH, HEALTH_MASK, HEALTH_POSITION);
-        data = updateField(data, INITIAL_HEALTH, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION); // Inizializza CURRENT_HEALTH allo stesso valore di HEALTH
-        data = updateField(data, INITIAL_STATS, STRENGTH_MASK, STRENGTH_POSITION);
-        data = updateField(data, INITIAL_STATS, SPEED_MASK, SPEED_POSITION);
-        data = updateField(data, INITIAL_STATS, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-        data = updateField(data, INITIAL_STATS, ACCURACY_MASK, ACCURACY_POSITION);
-        data = updateField(data, INITIAL_BREEDING, BREEDING_MASK, BREEDING_POSITION);
-        data = updateField(data, 0, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION); // Inizializza DUNGEON_STATUS a 0
+        data = updateField(data, GameConstants.INITIAL_XP, GameConstants.XP_MASK, GameConstants.XP_POSITION);
+        data = updateField(data, GameConstants.INITIAL_LEVEL, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
+        data = updateField(data, GameConstants.INITIAL_HEALTH, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = updateField(data, GameConstants.INITIAL_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
+        data = updateField(data, GameConstants.INITIAL_STATS, GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+        data = updateField(data, GameConstants.INITIAL_STATS, GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+        data = updateField(data, GameConstants.INITIAL_STATS, GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+        data = updateField(data, GameConstants.INITIAL_STATS, GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
+        data = updateField(data, GameConstants.INITIAL_BREEDING, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
+        data = updateField(data, 0, GameConstants.DUNGEON_STATUS_MASK, GameConstants.DUNGEON_STATUS_POSITION);
         
         return data;
     }
@@ -107,14 +61,14 @@ library StatsLib {
         uint256 accuracy,
         uint256 breeding
     ) {
-        xp = extractField(data, XP_MASK, XP_POSITION);
-        level = extractField(data, LEVEL_MASK, LEVEL_POSITION);
-        health = extractField(data, HEALTH_MASK, HEALTH_POSITION);
-        strength = extractField(data, STRENGTH_MASK, STRENGTH_POSITION);
-        speed = extractField(data, SPEED_MASK, SPEED_POSITION);
-        intelligence = extractField(data, INTELLIGENCE_MASK, INTELLIGENCE_POSITION);
-        accuracy = extractField(data, ACCURACY_MASK, ACCURACY_POSITION);
-        breeding = extractField(data, BREEDING_MASK, BREEDING_POSITION);
+        xp = extractField(data, GameConstants.XP_MASK, GameConstants.XP_POSITION);
+        level = extractField(data, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
+        health = extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        strength = extractField(data, GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+        speed = extractField(data, GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+        intelligence = extractField(data, GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+        accuracy = extractField(data, GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
+        breeding = extractField(data, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
     }
 
     /// @notice Estrae un campo dai dati usando una maschera e una posizione
@@ -138,55 +92,55 @@ library StatsLib {
     }
 
     function setLevel(uint256 stats, uint256 level) internal pure returns (uint256) {
-        require(level <= MAX_LEVEL, "Level too high");
-        return updateField(stats, level, LEVEL_MASK, LEVEL_POSITION);
+        require(level <= GameConstants.MAX_LEVEL, "Level too high");
+        return updateField(stats, level, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
     }
 
     function setXP(uint256 stats, uint256 xp) internal pure returns (uint256) {
-        require(xp <= MAX_XP, "XP too high");
-        return updateField(stats, xp, XP_MASK, XP_POSITION);
+        require(xp <= GameConstants.MAX_XP, "XP too high");
+        return updateField(stats, xp, GameConstants.XP_MASK, GameConstants.XP_POSITION);
     }
 
     function setBreedingSlots(uint256 stats, uint256 slots) internal pure returns (uint256) {
-        require(slots <= MAX_BREEDING_SLOTS, "Too many breeding slots");
-        return updateField(stats, slots, BREEDING_MASK, BREEDING_POSITION);
+        require(slots <= GameConstants.MAX_BREEDING_SLOTS, "Too many breeding slots");
+        return updateField(stats, slots, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
     }
 
     function setBreedingCount(uint256 stats, uint256 count) internal pure returns (uint256) {
-        require(count <= MAX_BREEDING_COUNT, "Breeding count too high");
-        return updateField(stats, count, BREEDING_MASK, BREEDING_POSITION);
+        require(count <= GameConstants.MAX_BREEDING_COUNT, "Breeding count too high");
+        return updateField(stats, count, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
     }
 
     function setRarity(uint256 stats, uint256 rarity) internal pure returns (uint256) {
-        require(rarity <= MAX_RARITY, "Rarity too high");
-        return updateField(stats, rarity, GENETICS_MASK, GENETICS_POSITION);
+        require(rarity <= GameConstants.MAX_RARITY, "Rarity too high");
+        return updateField(stats, rarity, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
     }
 
     function getLevel(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, LEVEL_MASK, LEVEL_POSITION);
+        return extractField(stats, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
     }
 
     function getXP(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, XP_MASK, XP_POSITION);
+        return extractField(stats, GameConstants.XP_MASK, GameConstants.XP_POSITION);
     }
 
     function getBreedingSlots(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, BREEDING_MASK, BREEDING_POSITION);
+        return extractField(stats, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
     }
 
     function getBreedingCount(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, BREEDING_MASK, BREEDING_POSITION);
+        return extractField(stats, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
     }
 
     function getRarity(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, GENETICS_MASK, GENETICS_POSITION);
+        return extractField(stats, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
     }
 
     /// @notice Ottiene lo stato del dungeon del procione
     /// @param stats I dati dell'NFT
     /// @return Lo stato del dungeon (0 = non in dungeon, 1 = in dungeon)
     function getDungeonStatus(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION);
+        return extractField(stats, GameConstants.DUNGEON_STATUS_MASK, GameConstants.DUNGEON_STATUS_POSITION);
     }
 
     /// @notice Imposta lo stato del dungeon del procione
@@ -195,7 +149,7 @@ library StatsLib {
     /// @return I dati aggiornati
     function setDungeonStatus(uint256 stats, uint256 status) internal pure returns (uint256) {
         require(status <= 1, "Invalid dungeon status");
-        return updateField(stats, status, DUNGEON_STATUS_MASK, DUNGEON_STATUS_POSITION);
+        return updateField(stats, status, GameConstants.DUNGEON_STATUS_MASK, GameConstants.DUNGEON_STATUS_POSITION);
     }
 
     /// @notice Ottiene tutte le statistiche incluso lo stato del dungeon
@@ -218,37 +172,37 @@ library StatsLib {
 
     // Funzioni per le professioni
     function getProfession(uint256 stats) internal pure returns (Professions) {
-        return Professions(extractField(stats, PROFESSION_MASK, PROFESSION_POSITION));
+        return Professions(extractField(stats, GameConstants.PROFESSION_MASK, GameConstants.PROFESSION_POSITION));
     }
 
     function getProfessionLevel(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, PROFESSIONLVL_MASK, PROFESSIONLVL_POSITION);
+        return extractField(stats, GameConstants.PROFESSIONLVL_MASK, GameConstants.PROFESSIONLVL_POSITION);
     }
 
     function getProfessionExp(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, PROFESSIONEXP_MASK, PROFESSIONEXP_POSITION);
+        return extractField(stats, GameConstants.PROFESSIONEXP_MASK, GameConstants.PROFESSIONEXP_POSITION);
     }
 
     function setProfession(uint256 stats, Professions profession) internal pure returns (uint256) {
         require(uint256(profession) <= 15, "Profession value too high");
-        return updateField(stats, uint256(profession), PROFESSION_MASK, PROFESSION_POSITION);
+        return updateField(stats, uint256(profession), GameConstants.PROFESSION_MASK, GameConstants.PROFESSION_POSITION);
     }
 
     function setProfessionLevel(uint256 stats, uint256 level) internal pure returns (uint256) {
         require(level <= 20, "Profession level too high");
-        return updateField(stats, level, PROFESSIONLVL_MASK, PROFESSIONLVL_POSITION);
+        return updateField(stats, level, GameConstants.PROFESSIONLVL_MASK, GameConstants.PROFESSIONLVL_POSITION);
     }
 
     function setProfessionExp(uint256 stats, uint256 exp) internal pure returns (uint256) {
         require(exp <= 65535, "Profession exp too high");
-        return updateField(stats, exp, PROFESSIONEXP_MASK, PROFESSIONEXP_POSITION);
+        return updateField(stats, exp, GameConstants.PROFESSIONEXP_MASK, GameConstants.PROFESSIONEXP_POSITION);
     }
 
     /// @notice Ottiene il valore corrente della salute
     /// @param stats I dati dell'NFT
     /// @return Il valore corrente della salute
     function getCurrentHealth(uint256 stats) internal pure returns (uint256) {
-        return extractField(stats, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
+        return extractField(stats, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
     }
 
     /// @notice Modifica il valore corrente della salute
@@ -256,7 +210,7 @@ library StatsLib {
     /// @param newHealth Il nuovo valore della salute
     /// @return I dati aggiornati
     function setCurrentHealth(uint256 stats, uint256 newHealth) internal pure returns (uint256) {
-        uint256 maxHealth = extractField(stats, HEALTH_MASK, HEALTH_POSITION);
+        uint256 maxHealth = extractField(stats, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
         
         // Applica i limiti
         if (newHealth > maxHealth) {
@@ -264,7 +218,7 @@ library StatsLib {
         }
         // Non serve controllare < 0 perché uint256 non può essere negativo
         
-        return updateField(stats, newHealth, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
+        return updateField(stats, newHealth, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
     }
 
     /// @notice Modifica il valore corrente della salute aggiungendo o sottraendo un valore
@@ -274,7 +228,7 @@ library StatsLib {
     /// @return I dati aggiornati
     function modifyCurrentHealth(uint256 stats, uint256 delta, bool isAddition) internal pure returns (uint256) {
         uint256 currentHealth = getCurrentHealth(stats);
-        uint256 maxHealth = extractField(stats, HEALTH_MASK, HEALTH_POSITION);
+        uint256 maxHealth = extractField(stats, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
         uint256 newHealth;
         
         if (isAddition) {
@@ -294,6 +248,6 @@ library StatsLib {
             }
         }
         
-        return updateField(stats, newHealth, CURRENT_HEALTH_MASK, CURRENT_HEALTH_POSITION);
+        return updateField(stats, newHealth, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
     }
 } 

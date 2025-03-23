@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./libraries/StatsLib.sol";
 import "./libraries/GeneticsLib.sol";
+import "./libraries/GameConstants.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
 import "./RandomnessConsumer.sol";
 
@@ -149,8 +150,8 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         uint256 parent2Data = nftContract.getProcioneData(parent2Id);
 
         // Verifica breeding slots
-        uint256 parent1Breeding = StatsLib.extractField(parent1Data, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
-        uint256 parent2Breeding = StatsLib.extractField(parent2Data, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+        uint256 parent1Breeding = StatsLib.extractField(parent1Data, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
+        uint256 parent2Breeding = StatsLib.extractField(parent2Data, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
         if (parent1Breeding == 0 || parent2Breeding == 0) revert InsufficientBreedingSlots();
 
         // Calcola e addebita i costi
@@ -159,8 +160,8 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         if (!govToken.transferFrom(msg.sender, treasuryAddress, govBaseCost)) revert TransferFailed();
 
         // Aggiorna i breeding slots
-        parent1Data = StatsLib.updateField(parent1Data, parent1Breeding - 1, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
-        parent2Data = StatsLib.updateField(parent2Data, parent2Breeding - 1, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+        parent1Data = StatsLib.updateField(parent1Data, parent1Breeding - 1, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
+        parent2Data = StatsLib.updateField(parent2Data, parent2Breeding - 1, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
         nftContract.updateProcioneData(parent1Id, parent1Data);
         nftContract.updateProcioneData(parent2Id, parent2Data);
     }
@@ -191,8 +192,8 @@ contract IdleProcioneBreeding is Ownable, ReentrancyGuard, Pausable {
         uint256 parent2Data, 
         uint256 randomValue
     ) internal returns (uint256) {
-        uint256 parent1Genetics = StatsLib.extractField(parent1Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
-        uint256 parent2Genetics = StatsLib.extractField(parent2Data, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        uint256 parent1Genetics = StatsLib.extractField(parent1Data, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
+        uint256 parent2Genetics = StatsLib.extractField(parent2Data, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
         
         uint256 newGenetics = 0;
         

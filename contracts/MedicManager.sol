@@ -11,6 +11,7 @@ import "./interfaces/ICOM.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
 import "./interfaces/IProfessionsManager.sol";
 import "./libraries/StatsLib.sol";
+import "./libraries/GameConstants.sol";
 
 /// @title MedicManager
 /// @author Il tuo nome
@@ -110,7 +111,7 @@ contract MedicManager is
 
         // Ottiene i dati dell'NFT
         uint256 data = nftContract.getProcioneData(tokenId);
-        uint256 maxHealth = StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+        uint256 maxHealth = StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
         uint256 currentHealth = StatsLib.getCurrentHealth(data);
 
         // Verifica se l'NFT è già al massimo della salute
@@ -180,7 +181,7 @@ contract MedicManager is
             // Verifica salute e cura l'NFT
             uint256 data = nftContract.getProcioneData(tokenIds[i]);
             uint256 currentHealth = StatsLib.getCurrentHealth(data);
-            uint256 maxHealth = StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+            uint256 maxHealth = StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
             if (currentHealth >= maxHealth) revert NFTAlreadyAtFullHealth();
 
             // Calcola e trasferisci le fee

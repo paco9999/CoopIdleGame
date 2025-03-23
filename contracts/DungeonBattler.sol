@@ -136,6 +136,7 @@ contract DungeonBattler is Ownable {
     // Parametri di bilanciamento base
     uint256 public baseXpReward = 100;         // XP base per completamento dungeon
     uint256 public baseCOMReward = 50;         // Token COM base per completamento dungeon
+    uint256 public evadeCoefficient = 30;     // Coefficiente di schivata (moltiplicato per 100, quindi 30 = 0.3)
     
     // Ricompense personalizzate per dungeon
     mapping(uint256 => uint256) public dungeonXpRewards;      // DungeonID => XP reward
@@ -197,6 +198,9 @@ contract DungeonBattler is Ownable {
         bool isPaladinOnCooldown
     );
     
+    event EvadeCoefficientUpdated(uint256 newEvadeCoefficient);
+    event EvadeAttempt(uint256 indexed procione, uint256 speed, uint256 evadeChance, bool successful);
+    
     // ============ Errors ============
     
     error UnauthorizedCaller();
@@ -209,6 +213,7 @@ contract DungeonBattler is Ownable {
     error InvalidPartyParameters();
     error InvalidRandomSeed();
     error InvalidRewardValue();
+    error InvalidEvadeCoefficient();
     
     // ============ Constructor ============
     
@@ -308,6 +313,16 @@ contract DungeonBattler is Ownable {
         baseXpReward = _baseXpReward;
         baseCOMReward = _baseCOMReward;
         emit BaseRewardParametersUpdated(_baseXpReward, _baseCOMReward);
+    }
+    
+    /**
+     * @dev Aggiorna il coefficiente di schivata
+     * @param _evadeCoefficient Nuovo coefficiente di schivata (moltiplicato per 100)
+     */
+    function updateEvadeCoefficient(uint256 _evadeCoefficient) external onlyOwner {
+        if (_evadeCoefficient == 0 || _evadeCoefficient > 100) revert InvalidEvadeCoefficient();
+        evadeCoefficient = _evadeCoefficient;
+        emit EvadeCoefficientUpdated(_evadeCoefficient);
     }
     
     /**
@@ -414,6 +429,13 @@ contract DungeonBattler is Ownable {
         // Array della salute attuale dei procioni
         uint256[3] memory currentHealth = [procione1Health, procione2Health, procione3Health];
         uint256[3] memory prociones = [procione1Id, procione2Id, procione3Id];
+        
+        // Array delle velocità dei procioni (per il calcolo della schivata)
+        uint256[3] memory speedStats = [
+            idleProcioneNFT.getSpeed(procione1Id),
+            idleProcioneNFT.getSpeed(procione2Id),
+            idleProcioneNFT.getSpeed(procione3Id)
+        ];
         
         // Calcola il numero di attacchi basato sulla Duration
         uint256 attackCount = calculateAttackCount(duration, randomSeed);
@@ -541,6 +563,26 @@ contract DungeonBattler is Ownable {
                         break;
                     }
                 }
+            }
+            
+            // Verifica se il procione può schivare l'attacco
+            bool evaded = false;
+            
+            // Calcola la probabilità di schivata usando il metodo dedicato
+            uint256 evadeChance = calculateDodgeChance(speedStats[targetIndex]);
+            
+            // Genera un numero casuale tra 1 e 100 per determinare se la schivata ha successo
+            uint256 evadeRoll = uint256(keccak256(abi.encodePacked(attackSeed, "evade"))) % 100 + 1;
+            
+            // Determina se la schivata ha successo
+            evaded = evadeRoll <= evadeChance;
+            
+            // Emetti evento per la schivata
+            emit EvadeAttempt(prociones[targetIndex], speedStats[targetIndex], evadeChance, evaded);
+            
+            // Se il procione ha schivato con successo, salta l'applicazione del danno
+            if (evaded) {
+                continue;
             }
             
             // Applica il danno, gestendo il caso LETHAL
@@ -896,6 +938,27 @@ contract DungeonBattler is Ownable {
         }
         
         return materials;
+    }
+    
+    /**
+     * @dev Calcola la probabilità di schivata basata sulla velocità del procione
+     * @param defenderSpeed Velocità del procione
+     * @return dodgeChance Probabilità di schivata in percentuale (0-100)
+     */
+    function calculateDodgeChance(
+        uint256 defenderSpeed
+    ) public view returns (uint256) {
+        // Calcola la percentuale di schivata usando il coefficiente
+        // evadeCoefficient è già moltiplicato per 100, quindi dividiamo per 100 per ottenere la percentuale corretta
+        return (defenderSpeed * evadeCoefficient) / 100;
+    }
+    
+    /**
+     * @dev Restituisce il coefficiente di schivata corrente
+     * @return Il coefficiente di schivata (moltiplicato per 100)
+     */
+    function getEvadeCoefficient() public view returns (uint256) {
+        return evadeCoefficient;
     }
     
     // ============ Owner/Test Functions ============

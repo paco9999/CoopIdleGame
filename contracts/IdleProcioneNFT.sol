@@ -12,6 +12,7 @@ import "./libraries/GeneticsLib.sol";
 import "./libraries/WhitelistLib.sol";
 import "./libraries/FactionClassLib.sol";
 import "./libraries/StatsLib.sol";
+import "./libraries/GameConstants.sol";
 import "./interfaces/IIdleProcioneBreeding.sol";
 import "./RandomnessConsumer.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -196,9 +197,9 @@ contract IdleProcioneNFT is
 
         uint256 genetics = generateCompleteGenetics(randomNumber);
         uint256 data = StatsLib.createInitialData();
-        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
-        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        data = StatsLib.updateField(data, genetics, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, GameConstants.FACTION_MASK, GameConstants.FACTION_POSITION);
         _procioneData[tokenId] = data;
         
         // Genera e salva il fenotipo
@@ -233,9 +234,9 @@ contract IdleProcioneNFT is
         }
 
         uint256 data = StatsLib.createInitialData();
-        data = StatsLib.updateField(data, genetics, StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
-        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        data = StatsLib.updateField(data, genetics, GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
+        data = StatsLib.updateField(data, class, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, GameConstants.FACTION_MASK, GameConstants.FACTION_POSITION);
         _procioneData[tokenId] = data;
 
         // Genera e salva il fenotipo
@@ -483,6 +484,12 @@ contract IdleProcioneNFT is
         return professionBaseStep * ((currentLevel + 1) ** 2);
     }
 
+    function getGenetics(uint256 tokenId) public view returns (uint256) {
+        if (!_exists(tokenId)) revert TokenNotExists();
+        uint256 genetics = StatsLib.extractField(_procioneData[tokenId], GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
+        return genetics;
+    }
+
     // ========== Override Functions ==========
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
@@ -582,7 +589,7 @@ contract IdleProcioneNFT is
     function hasHiddenRecessiveTraits(uint256 tokenId) external view returns (bool) {
         if (!_exists(tokenId)) revert TokenNotExists();
         
-        uint256 genetics = StatsLib.extractField(_procioneData[tokenId], StatsLib.GENETICS_MASK, StatsLib.GENETICS_POSITION);
+        uint256 genetics = StatsLib.extractField(_procioneData[tokenId], GameConstants.GENETICS_MASK, GameConstants.GENETICS_POSITION);
         uint256[5] memory fenotipo = _fenotipo[tokenId];
         
         // Per ogni parte, verifica se ci sono tratti nascosti di valore

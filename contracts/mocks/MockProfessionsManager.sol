@@ -37,6 +37,8 @@ contract MockProfessionsManager {
             _availableSlots[tokenId] = 5;
         } else if (profession == PALADIN) {
             _paladinIds.push(tokenId);
+            _professions[tokenId] = PALADIN;
+            _cooldowns[tokenId] = false; // Inizializza il cooldown a false
         }
     }
 
@@ -139,8 +141,28 @@ contract MockProfessionsManager {
     }
 
     // Funzioni specifiche per Paladin
-    function isPaladinOnCooldown(uint256 tokenId) external view returns (bool) {
-        require(_professions[tokenId] == PALADIN, "Not a paladin");
+    function debugPaladinStatus(uint256 tokenId) external view returns (
+        bool isPaladin,
+        bool isOnCooldown,
+        bool isInPaladinArray
+    ) {
+        isPaladin = _professions[tokenId] == PALADIN;
+        isOnCooldown = _cooldowns[tokenId];
+        
+        isInPaladinArray = false;
+        for (uint256 i = 0; i < _paladinIds.length; i++) {
+            if (_paladinIds[i] == tokenId) {
+                isInPaladinArray = true;
+                break;
+            }
+        }
+    }
+
+    function isPaladinOnCooldown(uint256 tokenId) public view returns (bool) {
+        // Verifica prima se il token è un Paladin
+        if (_professions[tokenId] != PALADIN) {
+            return false; // Non genera errore, semplicemente ritorna false
+        }
         return _cooldowns[tokenId];
     }
 
@@ -156,6 +178,15 @@ contract MockProfessionsManager {
         if (level <= 19) return 12 * 3600; // 12 ore
         if (level == 20) return 6 * 3600;  // 6 ore
         return 24 * 3600; // Default: 24 ore
+    }
+
+    /**
+     * @dev Disattiva il cooldown di un Paladin (solo per test)
+     * @param tokenId ID del token
+     */
+    function deactivatePaladinCooldown(uint256 tokenId) external {
+        require(_professions[tokenId] == PALADIN, "Not a paladin");
+        _cooldowns[tokenId] = false;
     }
 
     /**

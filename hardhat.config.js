@@ -58,7 +58,8 @@ module.exports = {
   },
   libraries: {
     "contracts/test/StatsLibTestLib.sol": {
-      "StatsLibTestLib": "contracts/libraries/StatsLib.sol"
+      "StatsLibTestLib": "contracts/libraries/StatsLib.sol",
+      "GameConstantsLib": "contracts/libraries/GameConstants.sol"
     },
     "contracts/test/FactionClassLibTest.sol": {
       "FactionClassLib": "contracts/libraries/FactionClassLib.sol"

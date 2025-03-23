@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/StatsLib.sol";
+import "./libraries/GameConstants.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
 
 /// @title IdleProcioneEgg
@@ -124,10 +125,10 @@ contract IdleProcioneEgg is ERC721Pausable, Ownable, ReentrancyGuard {
         uint256 parent2Data = nftContract.getProcioneData(egg.parentId2);
 
         // Estrai classe e fazione da entrambi i genitori
-        uint256 parent1Class = StatsLib.extractField(parent1Data, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        uint256 parent2Class = StatsLib.extractField(parent2Data, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        uint256 parent1Faction = StatsLib.extractField(parent1Data, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
-        uint256 parent2Faction = StatsLib.extractField(parent2Data, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        uint256 parent1Class = StatsLib.extractField(parent1Data, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
+        uint256 parent2Class = StatsLib.extractField(parent2Data, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
+        uint256 parent1Faction = StatsLib.extractField(parent1Data, GameConstants.FACTION_MASK, GameConstants.FACTION_POSITION);
+        uint256 parent2Faction = StatsLib.extractField(parent2Data, GameConstants.FACTION_MASK, GameConstants.FACTION_POSITION);
 
         // 50% di probabilità per classe e fazione
         uint256 class = block.timestamp % 2 == 0 ? parent1Class : parent2Class;

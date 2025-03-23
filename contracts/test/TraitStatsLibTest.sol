@@ -3,6 +3,7 @@ pragma solidity ^0.8.9;
 
 import "../libraries/TraitStatsLib.sol";
 import "../libraries/StatsLib.sol";
+import "../libraries/GameConstants.sol";
 
 /**
  * @title TraitStatsLibTest
@@ -118,5 +119,38 @@ contract TraitStatsLibTest {
     
     function extractField(uint256 data, uint256 mask, uint8 position) external pure returns (uint256) {
         return StatsLib.extractField(data, mask, position);
+    }
+    
+    // Funzioni per ottenere le costanti da GameConstants per i test
+    function getXPMask() external pure returns (uint256) {
+        return GameConstants.XP_MASK;
+    }
+    
+    function getLevelMask() external pure returns (uint256) {
+        return GameConstants.LEVEL_MASK;
+    }
+    
+    function getXPPosition() external pure returns (uint8) {
+        return GameConstants.XP_POSITION;
+    }
+    
+    function getLevelPosition() external pure returns (uint8) {
+        return GameConstants.LEVEL_POSITION;
+    }
+    
+    function getHealthPosition() external pure returns (uint8) {
+        return GameConstants.HEALTH_POSITION;
+    }
+    
+    function getHealthMask() external pure returns (uint256) {
+        return GameConstants.HEALTH_MASK;
+    }
+    
+    function getInitialHealth() external pure returns (uint8) {
+        return GameConstants.INITIAL_HEALTH;
+    }
+    
+    function getInitialStats() external pure returns (uint8) {
+        return GameConstants.INITIAL_STATS;
     }
 } 

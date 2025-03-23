@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "../libraries/StatsLib.sol";
+import "../libraries/GameConstants.sol";
 
 contract MockIdleProcioneNFT is ERC721 {
     uint256 private _nextTokenId;
@@ -25,8 +26,8 @@ contract MockIdleProcioneNFT is ERC721 {
         _safeMint(to, tokenId);
         // Inizializza con salute massima e salute corrente al massimo
         uint256 data = 0;
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
         
         // Inizializza il fenotipo con valori casuali
@@ -54,14 +55,14 @@ contract MockIdleProcioneNFT is ERC721 {
         require(_ownerOf(tokenId) != address(0), "NFT does not exist");
         require(health <= MAX_HEALTH, "Health must be between 0 and 100");
         uint256 data = _procioneData[tokenId];
-        data = StatsLib.updateField(data, health, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, health, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
     }
 
     function setFullHealth(uint256 tokenId) public {
         require(_ownerOf(tokenId) != address(0), "NFT does not exist");
         uint256 data = _procioneData[tokenId];
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
     }
 
@@ -69,7 +70,7 @@ contract MockIdleProcioneNFT is ERC721 {
         require(_ownerOf(tokenId) != address(0), "NFT does not exist");
         uint256 data = _procioneData[tokenId];
         uint256 currentHealth = StatsLib.getCurrentHealth(data);
-        uint256 maxHealth = StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+        uint256 maxHealth = StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
         return currentHealth >= maxHealth;
     }
 
@@ -89,8 +90,8 @@ contract MockIdleProcioneNFT is ERC721 {
         _safeMint(to, tokenId);
         // Inizializza con salute massima e salute corrente al massimo
         uint256 data = 0;
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
         
         // Inizializza le statistiche con valori predefiniti
@@ -108,7 +109,7 @@ contract MockIdleProcioneNFT is ERC721 {
     function getBaseHealth(uint256 tokenId) external view returns (uint256) {
         require(_ownerOf(tokenId) != address(0), "Token non esistente");
         uint256 data = _procioneData[tokenId];
-        return StatsLib.extractField(data, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
+        return StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
     }
     
     function getStrength(uint256 tokenId) external view returns (uint256) {
@@ -155,7 +156,14 @@ contract MockIdleProcioneNFT is ERC721 {
     function setCurrentHealth(uint256 tokenId, uint256 health) external {
         require(_ownerOf(tokenId) != address(0), "Token non esistente");
         uint256 data = _procioneData[tokenId];
-        data = StatsLib.updateField(data, health, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, health, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
+        _procioneData[tokenId] = data;
+    }
+
+    function setMaxHealth(uint256 tokenId, uint256 health) external {
+        require(_ownerOf(tokenId) != address(0), "Token non esistente");
+        uint256 data = _procioneData[tokenId];
+        data = StatsLib.updateField(data, health, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
         _procioneData[tokenId] = data;
     }
 
@@ -179,8 +187,8 @@ contract MockIdleProcioneNFT is ERC721 {
         _safeMint(to, tokenId);
         // Inizializza con salute massima e salute corrente al massimo
         uint256 data = 0;
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
         
         // Inizializza le statistiche con valori predefiniti
@@ -204,8 +212,8 @@ contract MockIdleProcioneNFT is ERC721 {
         
         // Inizializza con salute massima e salute corrente al massimo
         uint256 data = 0;
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.HEALTH_MASK, StatsLib.HEALTH_POSITION);
-        data = StatsLib.updateField(data, MAX_HEALTH, StatsLib.CURRENT_HEALTH_MASK, StatsLib.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, MAX_HEALTH, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
         _procioneData[tokenId] = data;
         
         // Inizializza le statistiche con valori predefiniti
@@ -228,8 +236,8 @@ contract MockIdleProcioneNFT is ERC721 {
         
         // Crea i dati del procione combinando genetica, classe e fazione
         uint256 data = genetics;
-        data = StatsLib.updateField(data, class, StatsLib.CLASS_MASK, StatsLib.CLASS_POSITION);
-        data = StatsLib.updateField(data, faction, StatsLib.FACTION_MASK, StatsLib.FACTION_POSITION);
+        data = StatsLib.updateField(data, class, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
+        data = StatsLib.updateField(data, faction, GameConstants.FACTION_MASK, GameConstants.FACTION_POSITION);
         
         _procioneData[tokenId] = data;
         
@@ -251,7 +259,7 @@ contract MockIdleProcioneNFT is ERC721 {
             StatsLib.getProfessionExp(data)
         );
     }
-
+    
     function setProfession(uint256 tokenId, StatsLib.Professions profession) external {
         require(_ownerOf(tokenId) != address(0), "Token non esistente");
         uint256 data = _procioneData[tokenId];
@@ -261,29 +269,10 @@ contract MockIdleProcioneNFT is ERC721 {
         _procioneData[tokenId] = data;
     }
 
-    // Funzioni di supporto per i test
-    function setLevel(uint256 data, uint256 level) external pure returns (uint256) {
-        return StatsLib.updateField(data, level, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
-    }
-
-    function setEggContract(address _eggContract) external {
-        // Mock function per i test
-    }
-
-    function setLevelUpContract(address _levelUpContract) external {
-        // Mock function per i test
-    }
-
-    function setWhitelistPhase1(address[] memory addresses, bool status) external {
-        // Mock function per i test
-    }
-
-    function setPhaseStatus(uint256 phase, bool status) external {
-        // Mock function per i test
-    }
-
-    function randomMint() external returns (uint256) {
-        return safeMint(msg.sender);
+    function setTokenLevel(uint256 tokenId, uint256 level) external {
+        require(_ownerOf(tokenId) != address(0), "Token non esistente");
+        uint256 data = _procioneData[tokenId];
+        _procioneData[tokenId] = StatsLib.updateField(data, level, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
     }
 
     /**
@@ -315,5 +304,23 @@ contract MockIdleProcioneNFT is ERC721 {
     function addExperience(uint256 tokenId, uint256 amount) external {
         require(_ownerOf(tokenId) != address(0), "NFT does not exist");
         // Per il mock non facciamo nulla di particolare, solo validazione
+    }
+
+    // Utile per i test
+    function burn(uint256 tokenId) external {
+        // Verifica che il token esista
+        require(_ownerOf(tokenId) != address(0), "Token non esistente");
+        
+        // Cancella i dati associati al token
+        delete _procioneData[tokenId];
+        delete _dungeonStatus[tokenId];
+        delete _fenotipo[tokenId];
+        delete _strength[tokenId];
+        delete _speed[tokenId];
+        delete _intelligence[tokenId];
+        delete _accuracy[tokenId];
+        
+        // Esegue il burn del token
+        _burn(tokenId);
     }
 } 

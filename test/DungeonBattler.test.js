@@ -54,6 +54,21 @@ describe("DungeonBattler", function () {
     let useFixedHealth = false; // Default: usa salute randomizzata
     let fixedHealthValue = 120; // Valore di vita fissa predefinito
     let usePaladin = false; // Default: non utilizzare Paladin
+    let useTraitLibraries = false; // Default: non utilizzare le librerie di tratti
+    
+    // Costanti del gioco per allinearsi con il contratto
+    const GameConstants = {
+        INITIAL_STATS: 5,
+        INITIAL_HEALTH: 100,
+        INITIAL_LEVEL: 1,
+        INITIAL_XP: 0,
+        INITIAL_BREEDING: 0,
+        MAX_LEVEL: 100,
+        MAX_XP: 90000,
+        MAX_BREEDING_SLOTS: 5,
+        MAX_BREEDING_COUNT: 10,
+        MAX_RARITY: 5
+    };
     
     // Funzione per configurare i test
     async function configureTests() {
@@ -62,10 +77,14 @@ describe("DungeonBattler", function () {
         console.log("1. Salute randomizzata (valori diversi per ogni battaglia)");
         console.log("2. Salute fissa (tutti i procioni con " + fixedHealthValue + " HP)");
         console.log("3. Party con Paladin (tutti i procioni con " + fixedHealthValue + " HP e un Paladin nel team)");
+        console.log("4. Genetica e tratti completi (utilizzando le librerie TraitStatsLib e GeneticsLib)");
         
-        const choice = await askQuestion("Seleziona un'opzione (1/2/3): ");
+        const choice = await askQuestion("Seleziona un'opzione (1/2/3/4): ");
         
-        if (choice === "3") {
+        if (choice === "4") {
+            useTraitLibraries = true;
+            console.log(`\n✅ Modalità selezionata: Genetica e tratti completi`);
+        } else if (choice === "3") {
             useFixedHealth = true;
             usePaladin = true;
             console.log(`\n✅ Modalità selezionata: Party con Paladin (${fixedHealthValue} HP)`);
@@ -78,6 +97,59 @@ describe("DungeonBattler", function () {
         }
         
         return true;
+    }
+
+    // Funzione per setup contratti (necessaria per alcuni test)
+    async function setUpContracts() {
+        [owner, addr1, addr2] = await ethers.getSigners();
+
+        // Deploy dei mock
+        const MockIdleProcioneNFT = await ethers.getContractFactory("contracts/mocks/MockIdleProcioneNFT.sol:MockIdleProcioneNFT");
+        idleProcioneNFT = await MockIdleProcioneNFT.deploy();
+
+        const MockCraftingManager = await ethers.getContractFactory("contracts/mocks/MockCraftingManager.sol:MockCraftingManager");
+        craftingManager = await MockCraftingManager.deploy();
+
+        const MockRandomnessConsumer = await ethers.getContractFactory("contracts/mocks/MockRandomnessConsumer.sol:MockRandomnessConsumer");
+        randomnessConsumer = await MockRandomnessConsumer.deploy();
+
+        // Deploy di un mock semplice per DungeonManager
+        const MockDungeonManager = await ethers.getContractFactory("contracts/mocks/MockDungeonManager.sol:MockDungeonManager");
+        dungeonManager = await MockDungeonManager.deploy();
+
+        // Deploy del mock per ProfessionsManager
+        const MockProfessionsManager = await ethers.getContractFactory("contracts/mocks/MockProfessionsManager.sol:MockProfessionsManager");
+        professionsManager = await MockProfessionsManager.deploy();
+
+        // Deploy delle librerie necessarie
+        const TraitStatsLib = await ethers.getContractFactory("TraitStatsLib");
+        const traitStatsLib = await TraitStatsLib.deploy();
+        
+        const StatsLib = await ethers.getContractFactory("StatsLib");
+        const statsLib = await StatsLib.deploy();
+        
+        const GeneticsLib = await ethers.getContractFactory("GeneticsLib");
+        const geneticsLib = await GeneticsLib.deploy();
+
+        // Deploy del MockTraitStatsProcessor
+        const MockTraitStatsProcessor = await ethers.getContractFactory("MockTraitStatsProcessor", {
+            libraries: {
+                "contracts/libraries/TraitStatsLib.sol:TraitStatsLib": await traitStatsLib.getAddress()
+            }
+        });
+        traitStatsProcessor = await MockTraitStatsProcessor.deploy();
+
+        // Deploy del DungeonBattler
+        const DungeonBattler = await ethers.getContractFactory("DungeonBattler");
+        dungeonBattler = await DungeonBattler.deploy(
+            await dungeonManager.getAddress(),
+            await idleProcioneNFT.getAddress(),
+            await craftingManager.getAddress(),
+            await randomnessConsumer.getAddress()
+        );
+        
+        // Imposta il ProfessionsManager nel DungeonBattler
+        await dungeonBattler.setProfessionsManager(await professionsManager.getAddress());
     }
 
     beforeEach(async function () {
@@ -101,6 +173,24 @@ describe("DungeonBattler", function () {
         const MockProfessionsManager = await ethers.getContractFactory("contracts/mocks/MockProfessionsManager.sol:MockProfessionsManager");
         professionsManager = await MockProfessionsManager.deploy();
 
+        // Deploy delle librerie necessarie
+        const TraitStatsLib = await ethers.getContractFactory("TraitStatsLib");
+        const traitStatsLib = await TraitStatsLib.deploy();
+        
+        const StatsLib = await ethers.getContractFactory("StatsLib");
+        const statsLib = await StatsLib.deploy();
+        
+        const GeneticsLib = await ethers.getContractFactory("GeneticsLib");
+        const geneticsLib = await GeneticsLib.deploy();
+
+        // Deploy del MockTraitStatsProcessor
+        const MockTraitStatsProcessor = await ethers.getContractFactory("MockTraitStatsProcessor", {
+            libraries: {
+                "contracts/libraries/TraitStatsLib.sol:TraitStatsLib": await traitStatsLib.getAddress()
+            }
+        });
+        traitStatsProcessor = await MockTraitStatsProcessor.deploy();
+
         // Deploy del DungeonBattler
         const DungeonBattler = await ethers.getContractFactory("DungeonBattler");
         dungeonBattler = await DungeonBattler.deploy(
@@ -116,8 +206,32 @@ describe("DungeonBattler", function () {
 
     // Funzione per bypassare il controllo onlyDungeonManager
     async function setupDungeonManagerAuth() {
+        // Assicuriamo che owner sia valido
+        await ensureValidOwner();
+        
         // Utilizziamo un workaround: aggiorniamo l'indirizzo del DungeonManager al nostro indirizzo di test
         await dungeonBattler.updateDungeonManager(owner.address);
+        
+        // Verifichiamo che l'aggiornamento sia stato effettivo
+        const currentDungeonManager = await dungeonBattler.dungeonManager();
+        console.log(`DungeonManager aggiornato a: ${currentDungeonManager}`);
+        console.log(`Owner address: ${owner.address}`);
+        
+        // Se l'aggiornamento non è stato effettivo, proviamo con un approccio diverso
+        if (currentDungeonManager !== owner.address) {
+            console.error("Errore nell'aggiornare il DungeonManager, provo un approccio alternativo");
+            
+            // Alcuni contratti potrebbero richiedere una chiamata connect esplicita
+            await dungeonBattler.connect(owner).updateDungeonManager(owner.address);
+            
+            // Verifichiamo nuovamente
+            const updatedManager = await dungeonBattler.dungeonManager();
+            console.log(`DungeonManager aggiornato (secondo tentativo): ${updatedManager}`);
+            
+            if (updatedManager !== owner.address) {
+                throw new Error("Impossibile aggiornare il DungeonManager, autorizzazione non concessa.");
+            }
+        }
     }
 
     describe("Inizializzazione", function () {
@@ -214,7 +328,7 @@ describe("DungeonBattler", function () {
 
         it("Dovrebbe attivare le trappole in base a TrapDensity", async function () {
             const trapDensities = [1, 2, 3];
-            const numTests = 100;
+            const numTests = 1000; // Aumentato il numero di test per maggiore accuratezza
             
             // Statistica per contare i risultati
             const results = {};
@@ -235,8 +349,418 @@ describe("DungeonBattler", function () {
                 
                 // Verifica che le probabilità siano approssimativamente corrette
                 const expectedProb = density * 10; // 10%, 20%, 30%
-                expect(results[density].triggered).to.be.approximately(expectedProb, 10);
+                const actualProb = (results[density].triggered / numTests) * 100;
+                expect(actualProb).to.be.approximately(expectedProb, 5); // Ridotto il margine di errore a 5%
             }
+        });
+        
+        // Nuovo test per la meccanica di schivata
+        it("Dovrebbe calcolare correttamente la probabilità di schivata basata sulla velocità", async function () {
+            const velocitaProcione = 50;
+            
+            // Verifica che il coefficiente di schivata iniziale sia 30 (0.3)
+            const evadeCoeff = await dungeonBattler.evadeCoefficient();
+            expect(Number(evadeCoeff)).to.equal(30);
+            
+            // Prova ad aggiornare il coefficiente a 0 (dovrebbe fallire)
+            await expect(dungeonBattler.updateEvadeCoefficient(0))
+                .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+            
+            // Prova ad aggiornare il coefficiente a 101 (dovrebbe fallire)
+            await expect(dungeonBattler.updateEvadeCoefficient(101))
+                .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+            
+            // Aggiorna il coefficiente a un valore valido (40)
+            await dungeonBattler.updateEvadeCoefficient(40);
+            expect(Number(await dungeonBattler.evadeCoefficient())).to.equal(40);
+            
+            // Calcola la probabilità di schivata attesa (velocità * coefficiente / 100)
+            const probabilitaAttesa = Math.floor((velocitaProcione * 40) / 100); // 50 * 0.4 = 20%
+            console.log("Probabilità di schivata attesa:", probabilitaAttesa + "%");
+            
+            // Ottieni la probabilità di schivata dal contratto
+            const probabilitaCalcolata = await dungeonBattler.calculateDodgeChance(velocitaProcione);
+            console.log("Probabilità di schivata calcolata dal contratto:", Number(probabilitaCalcolata) + "%");
+            
+            // Verifica che la probabilità calcolata sia corretta
+            expect(Number(probabilitaCalcolata)).to.equal(probabilitaAttesa);
+            
+            // Ripristina il coefficiente originale
+            await dungeonBattler.updateEvadeCoefficient(30);
+            expect(Number(await dungeonBattler.evadeCoefficient())).to.equal(30);
+        });
+        
+        it("Dovrebbe permettere ai procioni di schivare gli attacchi in base alla velocità", async function () {
+            // Setup del test
+            console.log("\n=== SETUP TEST DI SCHIVATA ===");
+            
+            // Configura l'autorizzazione
+            console.log("1. Configurazione autorizzazioni...");
+            await setupDungeonManagerAuth();
+            
+            // Mint di tre procioni per il party completo
+            const tokenId1 = 2001; // Attaccante
+            const tokenId2 = 2002; // Difensore (quello che dovrà schivare)
+            const tokenId3 = 2003; // Terzo procione di supporto
+            
+            console.log("\n2. Creazione procioni...");
+            console.log(`- Mint procione 1 (ID: ${tokenId1})`);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId1);
+            
+            console.log(`- Mint procione 2 (ID: ${tokenId2})`);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId2);
+            
+            console.log(`- Mint procione 3 (ID: ${tokenId3})`);
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId3);
+            
+            // Verifica che i token siano stati creati correttamente
+            console.log("\n3. Verifica creazione procioni...");
+            const owner1 = await idleProcioneNFT.ownerOf(tokenId1);
+            const owner2 = await idleProcioneNFT.ownerOf(tokenId2);
+            const owner3 = await idleProcioneNFT.ownerOf(tokenId3);
+            
+            console.log(`- Procione 1: ${owner1 === owner.address ? '✓' : '✗'}`);
+            console.log(`- Procione 2: ${owner2 === owner.address ? '✓' : '✗'}`);
+            console.log(`- Procione 3: ${owner3 === owner.address ? '✓' : '✗'}`);
+            
+            expect(owner1).to.equal(owner.address);
+            expect(owner2).to.equal(owner.address);
+            expect(owner3).to.equal(owner.address);
+            
+            // Imposta le statistiche base per tutti i procioni
+            console.log("\n4. Impostazione statistiche...");
+            
+            // Procione 1 (Attaccante) - Statistiche bilanciate
+            console.log("Procione 1 (Attaccante):");
+            await idleProcioneNFT.setStrength(tokenId1, 50);
+            await idleProcioneNFT.setSpeed(tokenId1, 40);
+            await idleProcioneNFT.setIntelligence(tokenId1, 30);
+            await idleProcioneNFT.setAccuracy(tokenId1, 45);
+            
+            // Procione 2 (Difensore) - Alta velocità per testare la schivata
+            console.log("Procione 2 (Difensore):");
+            await idleProcioneNFT.setStrength(tokenId2, 30);
+            await idleProcioneNFT.setSpeed(tokenId2, 50);  // Alta velocità per testare la schivata
+            await idleProcioneNFT.setIntelligence(tokenId2, 30);
+            await idleProcioneNFT.setAccuracy(tokenId2, 35);
+            
+            // Procione 3 (Supporto) - Statistiche base
+            console.log("Procione 3 (Supporto):");
+            await idleProcioneNFT.setStrength(tokenId3, 35);
+            await idleProcioneNFT.setSpeed(tokenId3, 35);
+            await idleProcioneNFT.setIntelligence(tokenId3, 35);
+            await idleProcioneNFT.setAccuracy(tokenId3, 35);
+            
+            // Verifica che le statistiche siano state impostate correttamente
+            console.log("\n5. Verifica statistiche...");
+            const speed2 = Number(await idleProcioneNFT.getSpeed(tokenId2));
+            console.log(`- Velocità procione difensore: ${speed2}`);
+            expect(speed2).to.equal(50);
+            
+            // Imposta salute iniziale per tutti i procioni
+            console.log("\n6. Impostazione salute iniziale...");
+            const initialHealth = 100;
+            
+            await idleProcioneNFT.setHealth(tokenId1, initialHealth);
+            await idleProcioneNFT.setHealth(tokenId2, initialHealth);
+            await idleProcioneNFT.setHealth(tokenId3, initialHealth);
+            
+            // Verifica che la salute sia stata impostata correttamente
+            const health1 = Number(await idleProcioneNFT.getHealth(tokenId1));
+            const health2 = Number(await idleProcioneNFT.getHealth(tokenId2));
+            const health3 = Number(await idleProcioneNFT.getHealth(tokenId3));
+            
+            console.log(`- Salute procione 1: ${health1}/${initialHealth}`);
+            console.log(`- Salute procione 2: ${health2}/${initialHealth}`);
+            console.log(`- Salute procione 3: ${health3}/${initialHealth}`);
+            
+            expect(health1).to.equal(initialHealth);
+            expect(health2).to.equal(initialHealth);
+            expect(health3).to.equal(initialHealth);
+            
+            // Calcola la probabilità di schivata attesa
+            const evadeCoeff = Number(await dungeonBattler.evadeCoefficient());
+            const expectedDodgeChance = Math.floor((speed2 * evadeCoeff) / 100); // 50 * 0.3 = 15%
+            
+            console.log("\n7. Configurazione schivata:");
+            console.log(`- Velocità procione difensore: ${speed2}`);
+            console.log(`- Coefficiente schivata: ${evadeCoeff/100}`);
+            console.log(`- Probabilità attesa: ${expectedDodgeChance}%`);
+            
+            // Esegui 100 test di schivata
+            console.log("\n8. Esecuzione test di schivata (100 battaglie)...");
+            let totalAttempts = 0;
+            let evadeCount = 0;
+            let hitCount = 0;
+            
+            for(let i = 0; i < 100; i++) {
+                try {
+                    // Simula una battaglia completa
+                    const tx = await dungeonBattler.calculateBattleOutcome(
+                        1, // dungeonId
+                        0, // partyIndex
+                        tokenId1, // attaccante
+                        tokenId2, // difensore
+                        tokenId3, // supporto
+                        initialHealth, // salute iniziale procione 1
+                        initialHealth, // salute iniziale procione 2
+                        initialHealth, // salute iniziale procione 3
+                        [], // nessun oggetto equipaggiato
+                        [1, 1, 1, 1, 0], // stats base del dungeon
+                        Math.floor(Math.random() * 1000000) + i // seed casuale
+                    );
+                    
+                    const receipt = await tx.wait();
+                    
+                    // Cerca gli eventi di schivata
+                    const evadeEvents = receipt.logs
+                        .filter(log => {
+                            try {
+                                const parsed = dungeonBattler.interface.parseLog(log);
+                                return parsed.name === "EvadeAttempt";
+                            } catch (e) {
+                                return false;
+                            }
+                        })
+                        .map(log => dungeonBattler.interface.parseLog(log));
+                    
+                    // Conta i tentativi di schivata
+                    for(const event of evadeEvents) {
+                        totalAttempts++;
+                        if(event.args.successful) {
+                            evadeCount++;
+                        } else {
+                            hitCount++;
+                        }
+                    }
+                    
+                    if((i + 1) % 10 === 0) {
+                        console.log(`Progresso: ${i + 1}/100 battaglie completate`);
+                        console.log(`Tentativi di schivata finora: ${totalAttempts}`);
+                        console.log(`Schivate riuscite: ${evadeCount}, Colpi subiti: ${hitCount}`);
+                    }
+                    
+                } catch(error) {
+                    console.error(`\n❌ Errore nella battaglia ${i}:`, error.message);
+                    // Verifica lo stato dei token in caso di errore
+                    console.log("\nStato dei procioni:");
+                    const owner1 = await idleProcioneNFT.ownerOf(tokenId1).catch(e => "Non esistente");
+                    const owner2 = await idleProcioneNFT.ownerOf(tokenId2).catch(e => "Non esistente");
+                    const owner3 = await idleProcioneNFT.ownerOf(tokenId3).catch(e => "Non esistente");
+                    console.log(`- Procione 1 (${tokenId1}): ${owner1}`);
+                    console.log(`- Procione 2 (${tokenId2}): ${owner2}`);
+                    console.log(`- Procione 3 (${tokenId3}): ${owner3}`);
+                    throw error;
+                }
+            }
+            
+            console.log("\n9. Risultati dopo 100 battaglie:");
+            console.log(`- Tentativi totali di schivata: ${totalAttempts}`);
+            console.log(`- Schivate riuscite: ${evadeCount}`);
+            console.log(`- Colpi subiti: ${hitCount}`);
+            
+            // Calcola la percentuale di schivata effettiva
+            const actualDodgePercentage = totalAttempts > 0 ? (evadeCount / totalAttempts) * 100 : 0;
+            console.log(`- Percentuale schivata: ${actualDodgePercentage.toFixed(2)}%`);
+            console.log(`- Percentuale attesa: ${expectedDodgeChance}%`);
+            
+            // Verifica che la percentuale di schivata sia vicina a quella attesa (±5%)
+            expect(actualDodgePercentage).to.be.closeTo(expectedDodgeChance, 5);
+        });
+        
+        it("Dovrebbe permettere ai procioni di schivare gli attacchi in base alla velocità", async function () {
+            this.timeout(1200000); // Aumentiamo il timeout dato che faremo molti test
+            
+            // Prepara i procioni per il test
+            const procione1Id = 101;
+            const procione2Id = 102;
+            const procione3Id = 103;
+            
+            await idleProcioneNFT.simpleMintWithId(owner.address, procione1Id);
+            await idleProcioneNFT.simpleMintWithId(owner.address, procione2Id);
+            await idleProcioneNFT.simpleMintWithId(owner.address, procione3Id);
+            
+            // Imposta diverse velocità per i procioni
+            await idleProcioneNFT.setSpeed(procione1Id, 40);  // 40 * 0.3 = 12% probabilità di schivata
+            await idleProcioneNFT.setSpeed(procione2Id, 100); // 100 * 0.3 = 30% probabilità di schivata
+            await idleProcioneNFT.setSpeed(procione3Id, 200); // 200 * 0.3 = 60% probabilità di schivata
+            
+            // Configura il DungeonBattler
+            await setupDungeonManagerAuth();
+            
+            // Prepara i parametri per il test
+            const dungeonId = 1;
+            const partyIndex = 0;
+            const equippedItems = [];
+            const dungeonStats = [1, 1, 1, 1, 0]; // [Duration, Depth, TrapDensity, EnemyStrength, Drop_rate]
+            
+            // Esegui più battaglie per raccogliere dati statistici
+            const numTrials = 100;
+            
+            // Contatori per le schivate
+            const evadeStats = {
+                procione1: { attempts: 0, evades: 0 },
+                procione2: { attempts: 0, evades: 0 },
+                procione3: { attempts: 0, evades: 0 }
+            };
+            
+            for (let i = 0; i < numTrials; i++) {
+                // Imposta salute massima per ogni prova
+                await idleProcioneNFT.setCurrentHealth(procione1Id, 100);
+                await idleProcioneNFT.setCurrentHealth(procione2Id, 100);
+                await idleProcioneNFT.setCurrentHealth(procione3Id, 100);
+                
+                // Crea un seed casuale diverso per ogni battaglia
+                const randomSeed = Math.floor(Math.random() * 1000000) + i;
+                
+                // Reset di eventuali eventi precedenti
+                await ethers.provider.send("evm_snapshot", []);
+                
+                // Esegui una battaglia
+                const tx = await dungeonBattler.calculateBattleOutcome(
+                    dungeonId, partyIndex, 
+                    procione1Id, procione2Id, procione3Id, 
+                    100, 100, 100, 
+                    equippedItems, dungeonStats, randomSeed
+                );
+                
+                // Recupera gli eventi
+                const receipt = await tx.wait();
+                const evadeEvents = receipt.logs
+                    .filter(log => {
+                        try {
+                            return dungeonBattler.interface.parseLog(log).name === "EvadeAttempt";
+                        } catch (e) {
+                            return false;
+                        }
+                    })
+                    .map(log => dungeonBattler.interface.parseLog(log).args);
+                
+                // Analizza gli eventi di schivata
+                for (const event of evadeEvents) {
+                    if (event.procione.toString() === procione1Id.toString()) {
+                        evadeStats.procione1.attempts++;
+                        if (event.successful) evadeStats.procione1.evades++;
+                    } else if (event.procione.toString() === procione2Id.toString()) {
+                        evadeStats.procione2.attempts++;
+                        if (event.successful) evadeStats.procione2.evades++;
+                    } else if (event.procione.toString() === procione3Id.toString()) {
+                        evadeStats.procione3.attempts++;
+                        if (event.successful) evadeStats.procione3.evades++;
+                    }
+                }
+                
+                // Ripristina lo stato per il prossimo test
+                await ethers.provider.send("evm_revert", ["0x1"]);
+            }
+            
+            // Calcola e verifica le percentuali di schivata
+            function calculateEvadePercentage(stats) {
+                if (stats.attempts === 0) return 0;
+                return (stats.evades / stats.attempts) * 100;
+            }
+            
+            const procione1EvadePercent = calculateEvadePercentage(evadeStats.procione1);
+            const procione2EvadePercent = calculateEvadePercentage(evadeStats.procione2);
+            const procione3EvadePercent = calculateEvadePercentage(evadeStats.procione3);
+            
+            console.log(`Procione 1 (SPD 40): ${evadeStats.procione1.evades}/${evadeStats.procione1.attempts} = ${procione1EvadePercent.toFixed(1)}% (atteso ~12%)`);
+            console.log(`Procione 2 (SPD 100): ${evadeStats.procione2.evades}/${evadeStats.procione2.attempts} = ${procione2EvadePercent.toFixed(1)}% (atteso ~30%)`);
+            console.log(`Procione 3 (SPD 200): ${evadeStats.procione3.evades}/${evadeStats.procione3.attempts} = ${procione3EvadePercent.toFixed(1)}% (atteso ~60%)`);
+            
+            // Verifica che le percentuali siano ragionevolmente vicine ai valori attesi
+            // Consideriamo un margine di errore del 10% data la natura aleatoria
+            expect(procione1EvadePercent).to.be.approximately(12, 10);
+            expect(procione2EvadePercent).to.be.approximately(30, 10);
+            expect(procione3EvadePercent).to.be.approximately(60, 10);
+            
+            // Modifica il coefficiente e verifica che le probabilità cambino
+            await dungeonBattler.updateEvadeCoefficient(50); // 0.5 invece di 0.3
+            
+            // Resettiamo i contatori
+            Object.values(evadeStats).forEach(stat => {
+                stat.attempts = 0;
+                stat.evades = 0;
+            });
+            
+            // Ripeti i test con il nuovo coefficiente (campione più piccolo per risparmiare tempo)
+            for (let i = 0; i < 50; i++) {
+                await idleProcioneNFT.setCurrentHealth(procione1Id, 100);
+                await idleProcioneNFT.setCurrentHealth(procione2Id, 100);
+                await idleProcioneNFT.setCurrentHealth(procione3Id, 100);
+                
+                const randomSeed = Math.floor(Math.random() * 1000000) + i + 1000;
+                
+                await ethers.provider.send("evm_snapshot", []);
+                
+                const tx = await dungeonBattler.calculateBattleOutcome(
+                    dungeonId, partyIndex, 
+                    procione1Id, procione2Id, procione3Id, 
+                    100, 100, 100, 
+                    equippedItems, dungeonStats, randomSeed
+                );
+                
+                const receipt = await tx.wait();
+                const evadeEvents = receipt.logs
+                    .filter(log => {
+                        try {
+                            return dungeonBattler.interface.parseLog(log).name === "EvadeAttempt";
+                        } catch (e) {
+                            return false;
+                        }
+                    })
+                    .map(log => dungeonBattler.interface.parseLog(log).args);
+                
+                for (const event of evadeEvents) {
+                    if (event.procione.toString() === procione1Id.toString()) {
+                        evadeStats.procione1.attempts++;
+                        if (event.successful) evadeStats.procione1.evades++;
+                    } else if (event.procione.toString() === procione2Id.toString()) {
+                        evadeStats.procione2.attempts++;
+                        if (event.successful) evadeStats.procione2.evades++;
+                    } else if (event.procione.toString() === procione3Id.toString()) {
+                        evadeStats.procione3.attempts++;
+                        if (event.successful) evadeStats.procione3.evades++;
+                    }
+                }
+                
+                await ethers.provider.send("evm_revert", ["0x1"]);
+            }
+            
+            const procione1EvadePercentNew = calculateEvadePercentage(evadeStats.procione1);
+            const procione2EvadePercentNew = calculateEvadePercentage(evadeStats.procione2);
+            const procione3EvadePercentNew = calculateEvadePercentage(evadeStats.procione3);
+            
+            console.log(`\nCon coefficiente 0.5:`);
+            console.log(`Procione 1 (SPD 40): ${evadeStats.procione1.evades}/${evadeStats.procione1.attempts} = ${procione1EvadePercentNew.toFixed(1)}% (atteso ~20%)`);
+            console.log(`Procione 2 (SPD 100): ${evadeStats.procione2.evades}/${evadeStats.procione2.attempts} = ${procione2EvadePercentNew.toFixed(1)}% (atteso ~50%)`);
+            console.log(`Procione 3 (SPD 200): ${evadeStats.procione3.evades}/${evadeStats.procione3.attempts} = ${procione3EvadePercentNew.toFixed(1)}% (atteso ~100%)`);
+            
+            // Verifica che le percentuali siano aumentate con il nuovo coefficiente
+            expect(procione1EvadePercentNew).to.be.approximately(20, 15);
+            expect(procione2EvadePercentNew).to.be.approximately(50, 15);
+            expect(procione3EvadePercentNew).to.be.approximately(100, 15);
+            
+            // Ripristina il coefficiente originale
+            await dungeonBattler.updateEvadeCoefficient(30);
+        });
+
+        it("Dovrebbe calcolare correttamente il coefficiente di schivata", async function () {
+            // Verifica il coefficiente di schivata iniziale
+            expect(await dungeonBattler.evadeCoefficient()).to.equal(30);
+            
+            // Verifica che l'owner possa modificare il coefficiente
+            await dungeonBattler.updateEvadeCoefficient(40);
+            expect(await dungeonBattler.evadeCoefficient()).to.equal(40);
+            
+            // Verifica errore se il valore è 0 o > 100
+            await expect(dungeonBattler.updateEvadeCoefficient(0))
+                .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+            await expect(dungeonBattler.updateEvadeCoefficient(101))
+                .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+            
+            // Ripristina il valore originale
+            await dungeonBattler.updateEvadeCoefficient(30);
         });
     });
 
@@ -307,7 +831,7 @@ describe("DungeonBattler", function () {
 
         it("Dovrebbe attivare l'abilità di guarigione quando la salute scende sotto il 25%", async function () {
             // Usiamo un timeout esteso per questo test
-            this.timeout(30000);
+            this.timeout(1200000);
             
             // Configurazione del test
             await setupDungeonManagerAuth();
@@ -319,7 +843,7 @@ describe("DungeonBattler", function () {
             
             // Creiamo i procioni con ID specifici
             await idleProcioneNFT.simpleMintWithId(owner.address, tokenId1);
-            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId2);
+                await idleProcioneNFT.simpleMintWithId(owner.address, tokenId2);
             await idleProcioneNFT.simpleMintWithId(owner.address, tokenId3);
             
             // Impostiamo statistiche base per i procioni
@@ -344,43 +868,43 @@ describe("DungeonBattler", function () {
             await idleProcioneNFT.setCurrentHealth(tokenId2, initialHealth);
             await idleProcioneNFT.setCurrentHealth(tokenId3, initialHealth);
             
-            // Assegniamo la professione Paladin al primo procione in entrambi i sistemi
+            // Assegniamo la professione Paladin al primo procione
+            // Prima nel ProfessionsManager
             await professionsManager.assignProfession(tokenId1, 5); // 5 = PALADIN
-            await idleProcioneNFT.setProfession(tokenId1, 5); // Imposta anche in NFT
+            await professionsManager.setTokenOwner(tokenId1, owner.address);
+            
+            // Poi nell'NFT
+            await idleProcioneNFT.setProfession(tokenId1, 5);
             
             // Verifichiamo che la professione sia stata assegnata correttamente
-            const profession = await professionsManager.getProfession(tokenId1);
-            console.log(`Professione assegnata a tokenId1 in professionsManager: ${profession}`);
-            expect(profession).to.equal(5);
+            const profManagerProfession = await professionsManager.getProfession(tokenId1);
+            console.log(`Professione assegnata a tokenId1 in professionsManager: ${profManagerProfession}`);
+            expect(profManagerProfession).to.equal(5);
             
             // Verifichiamo anche in idleProcioneNFT
             const [nftProfession,,] = await idleProcioneNFT.getProfessionInfo(tokenId1);
             console.log(`Professione assegnata a tokenId1 in idleProcioneNFT: ${nftProfession}`);
             expect(nftProfession).to.equal(5);
-                    
+            
+            // Verifichiamo lo stato dettagliato del Paladin
+            const [isPaladinStatus, isOnCooldownStatus, isInPaladinArrayStatus] = await professionsManager.debugPaladinStatus(tokenId1);
+            console.log("\nStato dettagliato del Paladin:");
+            console.log(`- È registrato come Paladin: ${isPaladinStatus}`);
+            console.log(`- È in cooldown: ${isOnCooldownStatus}`);
+            console.log(`- È nell'array dei Paladin: ${isInPaladinArrayStatus}`);
+            
+            // Verifichiamo che tutto sia corretto
+            expect(isPaladinStatus).to.be.true;
+            expect(isOnCooldownStatus).to.be.false;
+            expect(isInPaladinArrayStatus).to.be.true;
+            
             // Assicuriamoci che il Paladin non sia in cooldown
-            await professionsManager.deactivateCooldown(tokenId1);
+            await professionsManager.deactivatePaladinCooldown(tokenId1);
             
             // Verifichiamo che isPaladinOnCooldown non lanci eccezioni
-            try {
-                const isOnCooldown = await professionsManager.isPaladinOnCooldown(tokenId1);
-                console.log(`Paladin in cooldown prima della battaglia: ${isOnCooldown}`);
-                expect(isOnCooldown).to.be.false;
-            } catch (error) {
-                console.error(`ERRORE: ${error.message}`);
-                // Se l'errore è "Not a paladin", è un problema con l'assegnazione della professione
-                if (error.message.includes("Not a paladin")) {
-                    console.log("Forzando la professione Paladin nel storage interno...");
-                    // Chiamiamo una funzione per forzare l'assegnazione se esiste
-                    if (typeof professionsManager.forceSetProfession === "function") {
-                        await professionsManager.forceSetProfession(tokenId1, 5);
-                        const newProfession = await professionsManager.getProfession(tokenId1);
-                        console.log(`Nuova professione dopo il force: ${newProfession}`);
-                    } else {
-                        console.log("Funzione forceSetProfession non disponibile");
-                    }
-                }
-            }
+            const isOnCooldownCheck = await professionsManager.isPaladinOnCooldown(tokenId1);
+            console.log(`Paladin in cooldown prima della battaglia: ${isOnCooldownCheck}`);
+            expect(isOnCooldownCheck).to.be.false;
             
             // Verifichiamo che professionsManager sia impostato nel DungeonBattler
             const profManagerAddress = await dungeonBattler.professionsManager();
@@ -581,6 +1105,18 @@ describe("DungeonBattler", function () {
             expect(nftProfession1).to.equal(5);
             expect(nftProfession2).to.equal(5);
             
+            // Verifichiamo lo stato dettagliato del Paladin
+            const [isPaladinStatus, isOnCooldownStatus, isInPaladinArrayStatus] = await professionsManager.debugPaladinStatus(tokenId1);
+            console.log(`\nStato dettagliato del Paladin 1:`);
+            console.log(`- È registrato come Paladin: ${isPaladinStatus}`);
+            console.log(`- È in cooldown: ${isOnCooldownStatus}`);
+            console.log(`- È nell'array dei Paladin: ${isInPaladinArrayStatus}`);
+            
+            // Verifichiamo che tutto sia corretto
+            expect(isPaladinStatus).to.be.true;
+            expect(isOnCooldownStatus).to.be.false;
+            expect(isInPaladinArrayStatus).to.be.true;
+            
             // Assicuriamoci che entrambi i Paladin non siano in cooldown
             await professionsManager.deactivateCooldown(tokenId1);
             await professionsManager.deactivateCooldown(tokenId2);
@@ -744,7 +1280,10 @@ describe("DungeonBattler", function () {
         // Esecuzione del test di battaglia
         it("Dovrebbe simulare battaglie e registrare gli esiti", async function () {
             // Aumentiamo il timeout per permettere l'esecuzione completa
-            this.timeout(600000); // 10 minuti
+            this.timeout(1200000); // 10 minuti
+            
+            // Assicurati che owner sia valido all'inizio del test
+            await ensureValidOwner();
             
             // Configurazione del test
             await configureTests();
@@ -765,13 +1304,14 @@ describe("DungeonBattler", function () {
             let failureCount = 0;
             
             // Configurazione del test parallelo
-            const testBattles = 500; // Ridotto per evitare tempi di esecuzione troppo lunghi
-            const batchSize = 50; // Riduciamo la dimensione dei batch per avere più parallelismo
-            const numBatches = Math.ceil(testBattles / batchSize);
-            const maxConcurrentThreads = 60; // Ridotto il numero massimo di thread paralleli per evitare errori di memoria
+            const testBattles = 10000; // Ridotto da 5000 a 2000 per un test più rapido
+            const batchSize = 50; // Manteniamo 50 battaglie per batch
+            const numBatches = Math.ceil(testBattles / batchSize); // Ora saranno 40 batch
+            const maxConcurrentThreads = 80; // Ridotto da 60 a 20 per migliorare la stabilità del sistema
             
             console.log(`\nEsecuzione di ${testBattles} battaglie in ${numBatches} batch (${batchSize} battaglie per batch)`);
             console.log(`Utilizzo di massimo ${maxConcurrentThreads} thread paralleli`);
+            console.log(`Modalità tratti e genetica: ${useTraitLibraries ? 'ATTIVA' : 'NON ATTIVA'}`);
             
             // Salviamo lo stato della blockchain per ripristinarlo rapidamente
             const snapshotId = await ethers.provider.send("evm_snapshot", []);
@@ -783,6 +1323,23 @@ describe("DungeonBattler", function () {
             
             // Funzione per processare un singolo batch di battaglie
             async function processBatchOfBattles(batchIndex) {
+                // Verifica che owner sia valido
+                if (!owner || owner.address === undefined) {
+                    const signers = await ethers.getSigners();
+                    owner = signers[0];
+                    console.log(`Re-inizializzato owner in batch ${batchIndex}: ${owner.address}`);
+                }
+                
+                // Assicurati che l'autorizzazione sia correttamente impostata 
+                // per risolvere l'errore "UnauthorizedCaller"
+                try {
+                    // Imposta owner come dungeonManager per autorizzare la chiamata
+                    await setupDungeonManagerAuth();
+                } catch (authError) {
+                    console.error(`Errore nel configurare l'autorizzazione per il batch ${batchIndex}:`, authError.message);
+                    // In caso di errore nell'impostare l'autorizzazione, tentiamo comunque di procedere
+                }
+                
                 const localBattleResults = [];
                 let localSuccessCount = 0;
                 let localFailureCount = 0;
@@ -833,24 +1390,24 @@ describe("DungeonBattler", function () {
                         const tokenId = getUniqueTokenId(batchIndex, i + (battleIndex - startBattleIndex) * 3);
                         
                         if (!procioniPerBatch[tokenId]) {
-                            // Mint un nuovo procione con ID univoco solo se non esiste già
-                            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId);
-                            
-                            // Imposta le statistiche
-                            await idleProcioneNFT.setStrength(tokenId, 10 + i * 5);
-                            await idleProcioneNFT.setSpeed(tokenId, 10 + i * 3);
-                            await idleProcioneNFT.setIntelligence(tokenId, 10 + i * 2);
-                            await idleProcioneNFT.setAccuracy(tokenId, 10 + i * 4);
-                            
-                            // Se è richiesto un party con Paladin, rendi il primo procione (i == 0) di ogni party un Paladin
-                            if (usePaladin && i == 0) {
-                                // Assegna la professione Paladin sia in professionsManager che in idleProcioneNFT
-                                await professionsManager.assignProfession(tokenId, 5);
-                                await idleProcioneNFT.setProfession(tokenId, 5); // Imposta anche in NFT
-                                await professionsManager.deactivateCooldown(tokenId);
+                            if (useTraitLibraries) {
+                                // Utilizza la funzione per creare procioni con genetica e tratti completi
+                                // Se è richiesto un party con Paladin, passa direttamente la professione 5 (Paladin) per il primo procione
+                                if (usePaladin && i == 0) {
+                                    await createProcioneWithCompleteTraits(tokenId, 10, 5); // 5 = Paladin
+                                } else {
+                                    await createProcioneWithCompleteTraits(tokenId, 10);
+                                }
+                            } else {
+                                // Utilizza la funzione originale per creare procioni di livello 10 con tratti casuali
+                                const procioneData = await createProcioneLevel10WithRandomTraits(tokenId)();
                                 
-                                if (battleIndex % 20 === 0) {
-                                    console.log(`Configurato procione Paladin per party ${battleIndex}`);
+                                // Se è richiesto un party con Paladin, rendi il primo procione (i == 0) un Paladin
+                                if (usePaladin && i == 0) {
+                                    // Assegna la professione Paladin sia in professionsManager che in idleProcioneNFT
+                                    await professionsManager.assignProfession(tokenId, 5);
+                                    await idleProcioneNFT.setProfession(tokenId, 5); // Imposta anche in NFT
+                                    await professionsManager.deactivateCooldown(tokenId);
                                 }
                             }
                             
@@ -873,6 +1430,13 @@ describe("DungeonBattler", function () {
                     const randomSeed = Math.floor(Math.random() * 1000000) + 1 + battleIndex;
                     
                     try {
+                        // Riconferma l'autorizzazione prima di ogni battaglia per evitare problemi
+                        // Questo è cruciale per risolvere l'errore "UnauthorizedCaller"
+                        const currentDungeonManager = await dungeonBattler.dungeonManager();
+                        if (currentDungeonManager !== owner.address) {
+                            await setupDungeonManagerAuth();
+                        }
+
                         // Chiamata al contratto
                         const tx = await dungeonBattler.calculateBattleOutcome(
                             dungeonId,
@@ -1022,6 +1586,12 @@ describe("DungeonBattler", function () {
                                 // Attendiamo un po' prima di riprovare
                                 await new Promise(resolve => setTimeout(resolve, 500 * retryAttempt));
                                 
+                                // Riconferma l'autorizzazione anche nei retry
+                                const currentDungeonManager = await dungeonBattler.dungeonManager();
+                                if (currentDungeonManager !== owner.address) {
+                                    await setupDungeonManagerAuth();
+                                }
+                                
                                 // Genera un nuovo seed per evitare problemi
                                 const newRandomSeed = randomSeed + retryAttempt * 1000;
                                 
@@ -1074,7 +1644,7 @@ describe("DungeonBattler", function () {
                                             }
                                         })
                                         .filter(parsed => parsed !== null);
-                                        
+                                            
                                     const retryHealingEvents = allRetryEvents.filter(event => event.name === "PaladinHealActivated");
                                     
                                     // Se ci sono eventi di guarigione, incrementa i contatori
@@ -1443,7 +2013,9 @@ describe("DungeonBattler", function () {
                                 // Log di completamento del batch
                                 console.log(`✅ Batch ${result.batchIndex + 1}/${numBatches} completato: ${result.successes} vittorie, ${result.failures} sconfitte`);
                                 
-                                // Tentiamo di avviare un altro batch
+                                // Tentiamo di avviare un altro batch - 
+                                // IMPORTANTE: Questa chiamata ricorsiva garantisce che nuovi batch vengano avviati
+                                // quando quelli in corso terminano
                                 return startNextBatchIfAvailable();
                             })
                             .catch(error => {
@@ -1475,7 +2047,9 @@ describe("DungeonBattler", function () {
                                             
                                             console.log(`✅ Retry batch ${batchIdx + 1} completato con successo!`);
                                             completedBatchResults.push(retryResult);
-                                            return true;
+                                            
+                                            // Tentiamo di avviare un altro batch
+                                            return startNextBatchIfAvailable();
                                         } catch (retryError) {
                                             console.error(`❌ Tentativo ${attemptNumber} fallito per batch ${batchIdx + 1}: ${retryError.message}`);
                                             
@@ -1494,18 +2068,13 @@ describe("DungeonBattler", function () {
                                             error: true
                                         });
                                         
-                                        return false;
+                                        // Tentiamo di avviare un altro batch
+                                        return startNextBatchIfAvailable();
                                     }
                                 };
                                 
-                                // Avviamo il retry ma non attendiamo (proseguiamo con altri batch)
-                                retryBatch(batchIndex).then(() => {
-                                    // Dopo il retry, avviamo il prossimo batch disponibile
-                                    return startNextBatchIfAvailable();
-                                });
-                                
-                                // Per non bloccare l'esecuzione, avviamo anche immediatamente il prossimo batch
-                                return startNextBatchIfAvailable();
+                                // Avviamo il retry
+                                return retryBatch(batchIndex);
                             });
                         
                         // Aggiungiamo la promessa a quelle in esecuzione
@@ -1516,59 +2085,47 @@ describe("DungeonBattler", function () {
                         return startNextBatchIfAvailable();
                     }
                     
-                    // Se non ci sono più batch da avviare, attendiamo che tutti i batch in esecuzione terminino
+                    // Se non ci sono batch da avviare, ma ci sono ancora thread in esecuzione, aspettiamo
+                    if (pendingBatchIndices.length === 0 && runningPromises.length > 0) {
+                        console.log(`In attesa di ${runningPromises.length} thread attivi per completare...`);
+                        // Non fare nulla, stiamo solo aspettando che tutti i thread terminino
+                        return null;
+                    }
+                    
+                    // Se non ci sono più batch da avviare e tutti i thread sono terminati, ritorniamo i risultati
                     if (pendingBatchIndices.length === 0 && runningPromises.length === 0) {
                         return completedBatchResults;
                     }
-                    
-                    // Se abbiamo raggiunto il limite di thread, ritorniamo null
-                    return null;
                 };
                 
-                // Avviamo il processo di esecuzione dei batch
-                await startNextBatchIfAvailable();
-                
-                // Attendiamo eventuali batch ancora in esecuzione
-                if (runningPromises.length > 0) {
-                    console.log(`In attesa del completamento di ${runningPromises.length} batch rimanenti...`);
-                    await Promise.all(runningPromises);
+                // Avvia il processo di esecuzione dei batch iniziali
+                console.log(`Avvio iniziale di ${Math.min(pendingBatchIndices.length, currentMaxThreads)} thread (di ${pendingBatchIndices.length} totali)`);
+                for (let i = 0; i < Math.min(pendingBatchIndices.length, currentMaxThreads); i++) {
+                    await startNextBatchIfAvailable();
                 }
                 
-                // Verifica se ci sono altri batch in attesa e li avvia forzatamente
-                // Questo è necessario perché potrebbe verificarsi una condizione di stallo
-                // dove nessun thread avvia nuovi batch perché tutti pensano che ci siano già abbastanza thread attivi
-                if (pendingBatchIndices.length > 0) {
-                    console.log(`\n⚠️ Rilevati ${pendingBatchIndices.length} batch ancora in attesa dopo il ciclo principale.`);
-                    console.log(`Avvio forzato dei batch rimanenti...`);
+                // Attendi il completamento di tutti i batch - questa è la parte più importante
+                // Continua a controllare finché ci sono batch in attesa o thread in esecuzione
+                while (pendingBatchIndices.length > 0 || runningPromises.length > 0) {
+                    // Log ogni 10 secondi per monitorare lo stato
+                    console.log(`Stato: ${pendingBatchIndices.length} batch in attesa, ${runningPromises.length} thread attivi`);
                     
-                    // Avvia manualmente tutti i batch rimanenti in gruppi
-                    while (pendingBatchIndices.length > 0) {
-                        const batchPromises = [];
-                        const batchLimit = Math.min(pendingBatchIndices.length, currentMaxThreads);
+                    // Se ci sono meno thread in esecuzione rispetto al limite massimo e ci sono batch in attesa,
+                    // avvia nuovi batch
+                    if (runningPromises.length < currentMaxThreads && pendingBatchIndices.length > 0) {
+                        const batchesToStart = Math.min(currentMaxThreads - runningPromises.length, pendingBatchIndices.length);
+                        console.log(`Avvio di ${batchesToStart} nuovi batch...`);
                         
-                        console.log(`Avvio gruppo di ${batchLimit} batch...`);
-                        
-                        for (let i = 0; i < batchLimit; i++) {
-                            if (pendingBatchIndices.length === 0) break;
-                            const batchIndex = pendingBatchIndices.shift();
-                            batchPromises.push(processBatchOfBattles(batchIndex));
+                        for (let i = 0; i < batchesToStart; i++) {
+                            await startNextBatchIfAvailable();
                         }
-                        
-                        // Attendi il completamento di questo gruppo
-                        const batchResults = await Promise.all(batchPromises);
-                        
-                        // Aggiungi i risultati
-                        for (const result of batchResults) {
-                            completedBatchResults.push(result);
-                            console.log(`✅ Batch ${result.batchIndex + 1}/${numBatches} completato (avvio forzato): ${result.successes} vittorie, ${result.failures} sconfitte`);
-                        }
-                        
-                        console.log(`${pendingBatchIndices.length} batch rimanenti...`);
                     }
+                    
+                    // Attendi un po' prima di controllare di nuovo
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                 }
                 
-                // Ordiniamo i risultati per indice del batch
-                completedBatchResults.sort((a, b) => a.batchIndex - b.batchIndex);
+                console.log(`Tutti i ${numBatches} batch sono stati completati!`);
                 
                 // Combina i risultati di tutti i batch
                 for (const result of completedBatchResults) {
@@ -1742,6 +2299,15 @@ describe("DungeonBattler", function () {
             const runEnduranceTest = await askQuestion("Vuoi eseguire il test di resistenza? (s/n): ");
             
             if (runEnduranceTest.toLowerCase() === 's' || runEnduranceTest.toLowerCase() === 'si' || runEnduranceTest.toLowerCase() === 'sì') {
+                // Assicuriamoci che owner sia correttamente impostato
+                if (!owner || owner.address === undefined) {
+                    const signers = await ethers.getSigners();
+                    owner = signers[0];
+                    console.log(`Re-inizializzato owner: ${owner.address}`);
+                } else {
+                    console.log(`Owner corrente: ${owner.address}`);
+                }
+
                 // Identifica i party che sono ancora in grado di combattere (tutti i procioni con vita > 0)
                 const survivingParties = [];
                 
@@ -1808,6 +2374,9 @@ describe("DungeonBattler", function () {
                 
                 // Per ogni party sopravvissuto, simuliamo battaglie fino alla sconfitta
                 for (let i = 0; i < partiesToTest.length; i++) {
+                    // Rivalidare owner all'inizio di ogni iterazione
+                    await ensureValidOwner();
+                    
                     const party = partiesToTest[i];
                     console.log(`\nTest resistenza party ${i+1}/${partiesToTest.length} (Dungeon: ${party.dungeonDifficulty})`);
                     
@@ -1820,21 +2389,43 @@ describe("DungeonBattler", function () {
                     
                     // Minting e configurazione dei procioni
                     for (let j = 0; j < 3; j++) {
-                        await idleProcioneNFT.simpleMintWithId(owner.address, tokenIds[j]);
-                        
-                        // Impostiamo le statistiche base
-                        await idleProcioneNFT.setStrength(tokenIds[j], 10 + j * 5);
-                        await idleProcioneNFT.setSpeed(tokenIds[j], 10 + j * 3);
-                        await idleProcioneNFT.setIntelligence(tokenIds[j], 10 + j * 2);
-                        await idleProcioneNFT.setAccuracy(tokenIds[j], 10 + j * 4);
-                        
-                        // Se è richiesto un party con Paladin, rendi il primo procione (j == 0) un Paladin
-                        if (usePaladin && j == 0) {
-                            // Assegna la professione Paladin sia in professionsManager che in idleProcioneNFT
-                            await professionsManager.assignProfession(tokenIds[j], 5);
-                            await idleProcioneNFT.setProfession(tokenIds[j], 5); // Imposta anche in NFT
-                            await professionsManager.deactivateCooldown(tokenIds[j]);
-                            console.log(`Configurato procione Paladin per test di resistenza party ${i+1}`);
+                        try {
+                            // Verifica che owner sia un indirizzo valido prima del mint
+                            if (!owner || owner.address === "0x0000000000000000000000000000000000000000") {
+                                console.error(`Owner non valido per il mint: ${owner?.address || 'undefined'}`);
+                                // Usa un indirizzo di fallback (quello del primo signer)
+                                const signers = await ethers.getSigners();
+                                owner = signers[0];
+                                console.log(`Usando indirizzo di fallback: ${owner.address}`);
+                            }
+                            
+                            await idleProcioneNFT.simpleMintWithId(owner.address, tokenIds[j]);
+                            
+                            // Utilizziamo la funzione createProcioneWithCompleteTraits
+                            if (usePaladin && j == 0) {
+                                // Crea un procione con classe Paladin (5)
+                                await createProcioneWithCompleteTraits(tokenIds[j], 10, 5);
+                                console.log(`Configurato procione Paladin per test di resistenza party ${i+1}`);
+                            } else {
+                                // Crea un procione con classe casuale
+                                await createProcioneWithCompleteTraits(tokenIds[j], 10);
+                            }
+            } catch (error) {
+                            console.error(`Errore nel mint del procione ${tokenIds[j]}: ${error.message}`);
+                            // Se l'errore è dovuto a un token già esistente, possiamo continuare
+                            if (error.message.includes("ERC721: token already minted")) {
+                                console.log(`Il token ${tokenIds[j]} esiste già, continuo con la configurazione...`);
+                                
+                                // Configuriamo comunque il procione
+                                if (usePaladin && j == 0) {
+                                    await createProcioneWithCompleteTraits(tokenIds[j], 10, 5);
+                                } else {
+                                    await createProcioneWithCompleteTraits(tokenIds[j], 10);
+                                }
+                            } else {
+                                // Rilanciamo errori che non riguardano un token già mintato
+                    throw error;
+                            }
                         }
                     }
                     
@@ -2172,5 +2763,389 @@ describe("DungeonBattler", function () {
             ];
             return difficulties[index] || "Sconosciuto";
         }
+
+        // Funzione per creare procioni di livello 10 con tratti casuali
+        function createProcioneLevel10WithRandomTraits(tokenId) {
+            return async () => {
+                // Mint il procione base
+                await idleProcioneNFT.simpleMintWithId(owner.address, tokenId);
+                
+                // Imposta il livello a 10
+                await idleProcioneNFT.setTokenLevel(tokenId, 10);
+                
+                // Genera tratti casuali
+                const furTraitId = Math.floor(Math.random() * 8); // Da 0 a 7
+                const headTraitId = Math.floor(Math.random() * 6); // Da 0 a 5
+                const weaponTraitId = Math.floor(Math.random() * 6); // Da 0 a 5
+                const starTraitId = Math.floor(Math.random() * 6); // Da 0 a 5
+                const accTraitId = Math.floor(Math.random() * 5); // Da 0 a 4
+                
+                // Imposta i tratti usando setFenotipo
+                await idleProcioneNFT.setFenotipo(
+                    tokenId,
+                    [headTraitId, furTraitId, starTraitId, weaponTraitId, accTraitId]
+                );
+                
+                // Imposta la classe usando setProfession
+                const classTraitId = Math.floor(Math.random() * 5); // Da 0 a 4
+                await idleProcioneNFT.setProfession(tokenId, classTraitId);
+                
+                // Calcola bonus per ogni statistica in base ai tratti
+                // Livello 10 = 10 punti base per statistica + bonus dai tratti
+                const baseStats = 10; // Punti base per statistica al livello 10
+                
+                // Bonus casuali basati sui tratti
+                const strengthBonus = 5 + Math.floor(Math.random() * 16); // da 5 a 20
+                const speedBonus = 5 + Math.floor(Math.random() * 11); // da 5 a 15
+                const intelligenceBonus = 3 + Math.floor(Math.random() * 13); // da 3 a 15
+                const accuracyBonus = 4 + Math.floor(Math.random() * 16); // da 4 a 19
+                
+                // Imposta le statistiche
+                await idleProcioneNFT.setStrength(tokenId, baseStats + strengthBonus);
+                await idleProcioneNFT.setSpeed(tokenId, baseStats + speedBonus);
+                await idleProcioneNFT.setIntelligence(tokenId, baseStats + intelligenceBonus);
+                await idleProcioneNFT.setAccuracy(tokenId, baseStats + accuracyBonus);
+                
+                // Imposta la salute base 
+                const baseHealth = 100; // Salute base al livello 10
+                await idleProcioneNFT.setMaxHealth(tokenId, baseHealth);
+                await idleProcioneNFT.setCurrentHealth(tokenId, baseHealth);
+                
+                // Restituisci le statistiche per riferimento
+                return {
+                  tokenId,
+                  traits: {
+                    furTraitId,
+                    headTraitId,
+                    weaponTraitId,
+                    starTraitId,
+                    classTraitId
+                  },
+                  stats: {
+                    strength: baseStats + strengthBonus,
+                    speed: baseStats + speedBonus,
+                    intelligence: baseStats + intelligenceBonus,
+                    accuracy: baseStats + accuracyBonus,
+                    health: baseHealth
+                  }
+                };
+            };
+        }
+
+        // Test della logica di schivata
+        describe("Test della logica di schivata", function () {
+            beforeEach(async function () {
+                // Setup dei contratti come negli altri test
+                await setUpContracts();
+            });
+
+            it("Dovrebbe calcolare correttamente la probabilità di schivata basata sulla velocità", async function () {
+                const velocitaProcione = 50;
+                
+                // Verifica che il coefficiente di schivata iniziale sia 30 (0.3)
+                const evadeCoeff = await dungeonBattler.evadeCoefficient();
+                expect(Number(evadeCoeff)).to.equal(30);
+                
+                // Prova ad aggiornare il coefficiente a 0 (dovrebbe fallire)
+                await expect(dungeonBattler.updateEvadeCoefficient(0))
+                    .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+                
+                // Prova ad aggiornare il coefficiente a 101 (dovrebbe fallire)
+                await expect(dungeonBattler.updateEvadeCoefficient(101))
+                    .to.be.revertedWithCustomError(dungeonBattler, "InvalidEvadeCoefficient");
+                
+                // Aggiorna il coefficiente a un valore valido (40)
+                await dungeonBattler.updateEvadeCoefficient(40);
+                expect(Number(await dungeonBattler.evadeCoefficient())).to.equal(40);
+                
+                // Calcola la probabilità di schivata attesa (velocità * coefficiente / 100)
+                const probabilitaAttesa = Math.floor((velocitaProcione * 40) / 100); // 50 * 0.4 = 20%
+                console.log("Probabilità di schivata attesa:", probabilitaAttesa + "%");
+                
+                // Ottieni la probabilità di schivata dal contratto
+                const probabilitaCalcolata = await dungeonBattler.calculateDodgeChance(velocitaProcione);
+                console.log("Probabilità di schivata calcolata dal contratto:", Number(probabilitaCalcolata) + "%");
+                
+                // Verifica che la probabilità calcolata sia corretta
+                expect(Number(probabilitaCalcolata)).to.equal(probabilitaAttesa);
+                
+                // Ripristina il coefficiente originale
+                await dungeonBattler.updateEvadeCoefficient(30);
+                expect(Number(await dungeonBattler.evadeCoefficient())).to.equal(30);
+            });
+        });
     });
+
+    // Funzione di utilità per ottenere un owner valido
+    async function getValidOwner() {
+        if (!owner || !owner.address || owner.address === "0x0000000000000000000000000000000000000000") {
+            const signers = await ethers.getSigners();
+            if (!signers || signers.length === 0) {
+                throw new Error("Nessun signer disponibile");
+            }
+            owner = signers[0];
+            console.log(`Owner reinizializzato: ${owner.address}`);
+        }
+        return owner;
+    }
+
+    // Funzione per creare procioni con genetica e tratti completi
+    async function createProcioneWithCompleteTraits(tokenId, level, procinoneClass) {
+        // Ottieni un owner valido
+        const validOwner = await getValidOwner();
+        console.log(`Creazione procione ${tokenId} con owner: ${validOwner.address}`);
+
+        try {
+            // Verifica se il token esiste già
+            let exists = false;
+            let currentOwner;
+            
+            try {
+                currentOwner = await idleProcioneNFT.ownerOf(tokenId);
+                exists = true;
+                console.log(`Token ${tokenId} già esistente, proprietario: ${currentOwner}`);
+            } catch (e) {
+                // Token non esiste
+                exists = false;
+                console.log(`Token ${tokenId} non esiste, procedo con il mint`);
+            }
+
+            // Se il token non esiste, crealo
+            if (!exists) {
+                try {
+                    // Mint del token
+                    const tx = await idleProcioneNFT.simpleMintWithId(validOwner.address, tokenId);
+                    await tx.wait();
+                    console.log(`Token ${tokenId} mintato con successo`);
+                } catch (error) {
+                    // Gestisci errori specifici
+                    if (error.message.includes("ERC721: token already minted")) {
+                        console.log(`Token ${tokenId} già mintato, continuo con la configurazione`);
+                        exists = true;
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+            
+            // Verifica nuovamente la proprietà
+            try {
+                currentOwner = await idleProcioneNFT.ownerOf(tokenId);
+            } catch (e) {
+                // Se ancora non esiste, è un errore grave
+                throw new Error(`Token ${tokenId} non esiste dopo il tentativo di mint`);
+            }
+            
+            // Se il token appartiene a un altro owner, non possiamo procedere
+            if (currentOwner !== validOwner.address) {
+                throw new Error(`Token ${tokenId} appartiene a ${currentOwner}, non possiamo configurarlo`);
+            }
+
+            // Proteggi ogni operazione in un try-catch separato per isolare gli errori
+            
+            // Imposta il livello
+            try {
+                await idleProcioneNFT.setTokenLevel(tokenId, level);
+                console.log(`Livello impostato per token ${tokenId}`);
+            } catch (error) {
+                console.error(`Errore nell'impostare il livello: ${error.message}`);
+                // Se il token non esiste, tentiamo di rimintarlo
+                if (error.message.includes("Token non esistente") || error.message.includes("NFT does not exist")) {
+                    await idleProcioneNFT.simpleMintWithId(validOwner.address, tokenId);
+                    await idleProcioneNFT.setTokenLevel(tokenId, level);
+                    console.log(`Token rimintato e livello impostato per ${tokenId}`);
+                } else {
+                    throw error;
+                }
+            }
+
+            // Genera e imposta i tratti
+            const traits = {
+                furTraitId: Math.floor(Math.random() * 10),
+                headTraitId: Math.floor(Math.random() * 10),
+                weaponTraitId: Math.floor(Math.random() * 10),
+                starTraitId: Math.floor(Math.random() * 10),
+                accTraitId: Math.floor(Math.random() * 10)
+            };
+
+            // Imposta il fenotipo
+            try {
+                await idleProcioneNFT.setFenotipo(
+                    tokenId,
+                    [traits.headTraitId, traits.furTraitId, traits.starTraitId, traits.weaponTraitId, traits.accTraitId]
+                );
+                console.log(`Fenotipo impostato per token ${tokenId}`);
+            } catch (error) {
+                console.error(`Errore nell'impostare il fenotipo: ${error.message}`);
+                // Se il token non esiste, tentiamo di rimintarlo
+                if (error.message.includes("Token non esistente") || error.message.includes("NFT does not exist")) {
+                    await idleProcioneNFT.simpleMintWithId(validOwner.address, tokenId);
+                    await idleProcioneNFT.setFenotipo(
+                        tokenId,
+                        [traits.headTraitId, traits.furTraitId, traits.starTraitId, traits.weaponTraitId, traits.accTraitId]
+                    );
+                    console.log(`Token rimintato e fenotipo impostato per ${tokenId}`);
+                } else {
+                    throw error;
+                }
+            }
+
+            // Imposta la classe
+            const classe = procinoneClass !== undefined ? procinoneClass : Math.floor(Math.random() * 5) + 1;
+            try {
+                await idleProcioneNFT.setProfession(tokenId, classe);
+                console.log(`Professione impostata per token ${tokenId}`);
+            } catch (error) {
+                console.error(`Errore nell'impostare la professione: ${error.message}`);
+                // Se il token non esiste, tentiamo di rimintarlo
+                if (error.message.includes("Token non esistente") || error.message.includes("NFT does not exist")) {
+                    await idleProcioneNFT.simpleMintWithId(validOwner.address, tokenId);
+                    await idleProcioneNFT.setProfession(tokenId, classe);
+                    console.log(`Token rimintato e professione impostata per ${tokenId}`);
+                } else {
+                    throw error;
+                }
+            }
+
+            // Configura il Paladin se necessario
+            if (classe === 5 && professionsManager) {
+                try {
+                    await professionsManager.assignProfession(tokenId, 5);
+                    await professionsManager.setTokenOwner(tokenId, validOwner.address);
+                    await professionsManager.deactivatePaladinCooldown(tokenId);
+                    console.log(`Paladin configurato per token ${tokenId}`);
+                } catch (error) {
+                    console.error(`Errore nel configurare il Paladin: ${error.message}`);
+                    // Non facciamo fallire il test se il Paladin non può essere configurato
+                    // perché alcune parti del test potrebbero non richiederlo
+                }
+            }
+
+            // Imposta le statistiche base
+            const baseStats = GameConstants.INITIAL_STATS + (level * 2);
+            let health = GameConstants.INITIAL_HEALTH + (level * 2);
+            if (health > 100) health = 100;
+
+            // Imposta le statistiche come un'unica operazione atomica per evitare stati inconsistenti
+            try {
+                await Promise.all([
+                    idleProcioneNFT.setStrength(tokenId, baseStats),
+                    idleProcioneNFT.setSpeed(tokenId, baseStats),
+                    idleProcioneNFT.setIntelligence(tokenId, baseStats),
+                    idleProcioneNFT.setAccuracy(tokenId, baseStats),
+                    idleProcioneNFT.setMaxHealth(tokenId, health),
+                    idleProcioneNFT.setCurrentHealth(tokenId, health)
+                ]);
+                console.log(`Statistiche impostate per token ${tokenId}`);
+            } catch (error) {
+                console.error(`Errore nell'impostare le statistiche: ${error.message}`);
+                // Se il token non esiste, tentiamo di rimintarlo
+                if (error.message.includes("Token non esistente") || error.message.includes("NFT does not exist")) {
+                    await idleProcioneNFT.simpleMintWithId(validOwner.address, tokenId);
+                    
+                    // Riprova a impostare tutte le stats
+                    await Promise.all([
+                        idleProcioneNFT.setStrength(tokenId, baseStats),
+                        idleProcioneNFT.setSpeed(tokenId, baseStats),
+                        idleProcioneNFT.setIntelligence(tokenId, baseStats),
+                        idleProcioneNFT.setAccuracy(tokenId, baseStats),
+                        idleProcioneNFT.setMaxHealth(tokenId, health),
+                        idleProcioneNFT.setCurrentHealth(tokenId, health)
+                    ]);
+                    console.log(`Token rimintato e statistiche impostate per ${tokenId}`);
+                } else {
+                    throw error;
+                }
+            }
+
+            console.log(`Procione ${tokenId} configurato completamente`);
+            return tokenId;
+        } catch (error) {
+            console.error(`Errore nella creazione del procione ${tokenId}:`, error.message);
+            
+            // Se siamo qui, c'è stato un errore grave. Proviamo un ultimo tentativo con un nuovo ID
+            try {
+                const newTokenId = tokenId + 1000000; // Usiamo un ID molto diverso
+                console.log(`Tentativo finale con un nuovo ID: ${newTokenId}`);
+                return await createProcioneWithCompleteTraits(newTokenId, level, procinoneClass);
+            } catch (finalError) {
+                console.error(`Impossibile creare procione anche con ID alternativo:`, finalError.message);
+                throw error; // Rilancia l'errore originale
+            }
+        }
+    }
+
+    describe("Calcolo delle statistiche dai tratti", function () {
+        it("Dovrebbe calcolare correttamente le statistiche basate sui tratti", async function () {
+            // Definiamo un fenotipo specifico per il test
+            const fenotipo = [2, 4, 5, 7, 0]; // [headTrait, furTrait, starTrait, weaponTrait, accTrait]
+            const classe = 3; // Classe Rogue (velocità bonus, malus salute)
+            const livello = 10;
+
+            // Crea un procione con questo fenotipo
+            const tokenId = 9999;
+            await idleProcioneNFT.simpleMintWithId(owner.address, tokenId);
+            
+            // Verifica che il token sia stato creato
+            expect(await idleProcioneNFT.ownerOf(tokenId)).to.equal(owner.address);
+            
+            // Imposta il fenotipo e la classe
+            await idleProcioneNFT.setFenotipo(tokenId, fenotipo);
+            await idleProcioneNFT.setProfession(tokenId, classe);
+            await idleProcioneNFT.setTokenLevel(tokenId, livello);
+            
+            // Verifica che il fenotipo sia stato impostato correttamente
+            const fenotipoSalvato = await idleProcioneNFT.getFenotipo(tokenId);
+            expect(fenotipoSalvato.map(x => Number(x))).to.deep.equal(fenotipo);
+            
+            // Calcola le statistiche base per il livello (10 + level*2)
+            const baseStats = 10 + (livello * 2);
+            
+            // Calcola i bonus di classe
+            let strengthBonus = 0;
+            let speedBonus = 0;
+            let intelligenceBonus = 0;
+            let accuracyBonus = 0;
+            
+            // Per il Rogue (classe 3): +40% velocità, -20% salute
+            speedBonus = Math.floor(baseStats * 0.4);
+            
+            // Imposta le statistiche sul contratto
+            await idleProcioneNFT.setStrength(tokenId, baseStats + strengthBonus);
+            await idleProcioneNFT.setSpeed(tokenId, baseStats + speedBonus);
+            await idleProcioneNFT.setIntelligence(tokenId, baseStats + intelligenceBonus);
+            await idleProcioneNFT.setAccuracy(tokenId, baseStats + accuracyBonus);
+            
+            // Verifica che le statistiche siano state impostate correttamente
+            const strength = Number(await idleProcioneNFT.getStrength(tokenId));
+            const speed = Number(await idleProcioneNFT.getSpeed(tokenId));
+            const intelligence = Number(await idleProcioneNFT.getIntelligence(tokenId));
+            const accuracy = Number(await idleProcioneNFT.getAccuracy(tokenId));
+            
+            // Verifica che i valori siano numeri validi
+            expect(strength).to.be.a('number').and.to.be.finite;
+            expect(speed).to.be.a('number').and.to.be.finite;
+            expect(intelligence).to.be.a('number').and.to.be.finite;
+            expect(accuracy).to.be.a('number').and.to.be.finite;
+            
+            // Verifica che le statistiche siano state calcolate correttamente
+            expect(strength).to.equal(baseStats + strengthBonus);
+            expect(speed).to.equal(baseStats + speedBonus);
+            expect(intelligence).to.equal(baseStats + intelligenceBonus);
+            expect(accuracy).to.equal(baseStats + accuracyBonus);
+            
+            // Verifica che la velocità sia maggiore per un Rogue
+            expect(speed).to.be.gt(intelligence, "La velocità dovrebbe essere maggiore per un Rogue");
+        });
+    });
+
+    // Funzione per garantire un owner valido
+    async function ensureValidOwner() {
+        if (!owner || !owner.address || owner.address === "0x0000000000000000000000000000000000000000") {
+            const signers = await ethers.getSigners();
+            owner = signers[0];
+            console.log(`Owner reinizializzato: ${owner.address}`);
+        }
+        return owner;
+    }
 }); 

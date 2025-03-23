@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "../../libraries/StatsLib.sol";
+import "../../libraries/GameConstants.sol";
 
 /// @title StatsLibTest
 /// @notice Contratto di test per la libreria StatsLib
@@ -10,145 +11,145 @@ contract StatsLibTest {
 
     // Funzioni per ottenere le maschere
     function getXPMask() public pure returns (uint256) {
-        return StatsLib.XP_MASK;
+        return GameConstants.XP_MASK;
     }
 
     function getLevelMask() public pure returns (uint256) {
-        return StatsLib.LEVEL_MASK;
+        return GameConstants.LEVEL_MASK;
     }
 
     function getHealthMask() public pure returns (uint256) {
-        return StatsLib.HEALTH_MASK;
+        return GameConstants.HEALTH_MASK;
     }
 
     function getStrengthMask() public pure returns (uint256) {
-        return StatsLib.STRENGTH_MASK;
+        return GameConstants.STRENGTH_MASK;
     }
 
     function getSpeedMask() public pure returns (uint256) {
-        return StatsLib.SPEED_MASK;
+        return GameConstants.SPEED_MASK;
     }
 
     function getIntelligenceMask() public pure returns (uint256) {
-        return StatsLib.INTELLIGENCE_MASK;
+        return GameConstants.INTELLIGENCE_MASK;
     }
 
     function getAccuracyMask() public pure returns (uint256) {
-        return StatsLib.ACCURACY_MASK;
+        return GameConstants.ACCURACY_MASK;
     }
 
     function getCurrentHealthMask() public pure returns (uint256) {
-        return StatsLib.CURRENT_HEALTH_MASK;
+        return GameConstants.CURRENT_HEALTH_MASK;
     }
 
     function getBreedingMask() public pure returns (uint256) {
-        return StatsLib.BREEDING_MASK;
+        return GameConstants.BREEDING_MASK;
     }
 
     function getGeneticsMask() public pure returns (uint256) {
-        return StatsLib.GENETICS_MASK;
+        return GameConstants.GENETICS_MASK;
     }
 
     function getClassMask() public pure returns (uint256) {
-        return StatsLib.CLASS_MASK;
+        return GameConstants.CLASS_MASK;
     }
 
     function getFactionMask() public pure returns (uint256) {
-        return StatsLib.FACTION_MASK;
+        return GameConstants.FACTION_MASK;
     }
 
     function getProfessionMask() public pure returns (uint256) {
-        return StatsLib.PROFESSION_MASK;
+        return GameConstants.PROFESSION_MASK;
     }
 
     function getProfessionLvlMask() public pure returns (uint256) {
-        return StatsLib.PROFESSIONLVL_MASK;
+        return GameConstants.PROFESSIONLVL_MASK;
     }
 
     function getProfessionExpMask() public pure returns (uint256) {
-        return StatsLib.PROFESSIONEXP_MASK;
+        return GameConstants.PROFESSIONEXP_MASK;
     }
 
     function getDungeonStatusMask() public pure returns (uint256) {
-        return StatsLib.DUNGEON_STATUS_MASK;
+        return GameConstants.DUNGEON_STATUS_MASK;
     }
 
     // Funzioni per ottenere le posizioni
     function getXPPosition() public pure returns (uint256) {
-        return StatsLib.XP_POSITION;
+        return GameConstants.XP_POSITION;
     }
 
     function getLevelPosition() public pure returns (uint256) {
-        return StatsLib.LEVEL_POSITION;
+        return GameConstants.LEVEL_POSITION;
     }
 
     function getHealthPosition() public pure returns (uint256) {
-        return StatsLib.HEALTH_POSITION;
+        return GameConstants.HEALTH_POSITION;
     }
 
     function getStrengthPosition() public pure returns (uint256) {
-        return StatsLib.STRENGTH_POSITION;
+        return GameConstants.STRENGTH_POSITION;
     }
 
     function getSpeedPosition() public pure returns (uint256) {
-        return StatsLib.SPEED_POSITION;
+        return GameConstants.SPEED_POSITION;
     }
 
     function getIntelligencePosition() public pure returns (uint256) {
-        return StatsLib.INTELLIGENCE_POSITION;
+        return GameConstants.INTELLIGENCE_POSITION;
     }
 
     function getAccuracyPosition() public pure returns (uint256) {
-        return StatsLib.ACCURACY_POSITION;
+        return GameConstants.ACCURACY_POSITION;
     }
 
     function getCurrentHealthPosition() public pure returns (uint256) {
-        return StatsLib.CURRENT_HEALTH_POSITION;
+        return GameConstants.CURRENT_HEALTH_POSITION;
     }
 
     function getBreedingPosition() public pure returns (uint256) {
-        return StatsLib.BREEDING_POSITION;
+        return GameConstants.BREEDING_POSITION;
     }
 
     function getGeneticsPosition() public pure returns (uint256) {
-        return StatsLib.GENETICS_POSITION;
+        return GameConstants.GENETICS_POSITION;
     }
 
     function getClassPosition() public pure returns (uint256) {
-        return StatsLib.CLASS_POSITION;
+        return GameConstants.CLASS_POSITION;
     }
 
     function getFactionPosition() public pure returns (uint256) {
-        return StatsLib.FACTION_POSITION;
+        return GameConstants.FACTION_POSITION;
     }
 
     function getProfessionPosition() public pure returns (uint256) {
-        return StatsLib.PROFESSION_POSITION;
+        return GameConstants.PROFESSION_POSITION;
     }
 
     function getProfessionLvlPosition() public pure returns (uint256) {
-        return StatsLib.PROFESSIONLVL_POSITION;
+        return GameConstants.PROFESSIONLVL_POSITION;
     }
 
     function getProfessionExpPosition() public pure returns (uint256) {
-        return StatsLib.PROFESSIONEXP_POSITION;
+        return GameConstants.PROFESSIONEXP_POSITION;
     }
 
     function getDungeonStatusPosition() public pure returns (uint256) {
-        return StatsLib.DUNGEON_STATUS_POSITION;
+        return GameConstants.DUNGEON_STATUS_POSITION;
     }
 
     // Funzioni per ottenere i valori massimi
     function getMaxLevel() public pure returns (uint256) {
-        return StatsLib.MAX_LEVEL;
+        return GameConstants.MAX_LEVEL;
     }
 
     function getMaxXP() public pure returns (uint256) {
-        return StatsLib.MAX_XP;
+        return GameConstants.MAX_XP;
     }
 
     function getMaxBreedingSlots() public pure returns (uint256) {
-        return StatsLib.MAX_BREEDING_SLOTS;
+        return GameConstants.MAX_BREEDING_SLOTS;
     }
 
     // Funzioni di base

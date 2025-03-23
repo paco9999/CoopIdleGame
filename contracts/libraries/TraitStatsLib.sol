@@ -3,6 +3,7 @@ pragma solidity ^0.8.9;
 
 import "./StatsLib.sol";
 import "./GeneticsLib.sol";
+import "./GameConstants.sol";
 
 /**
  * @title TraitStatsLib
@@ -77,34 +78,8 @@ library TraitStatsLib {
         mapping(uint8 => ClassTrait) classTraits;
     }
     
-    // Costanti per le maschere e posizioni dei dati
-    bytes32 constant XP_MASK = bytes32(uint256(0x1FFFF));        // 0-16 (17 bit)
-    bytes32 constant LEVEL_MASK = bytes32(uint256(0xFF));        // 17-24
-    bytes32 constant HEALTH_MASK = bytes32(uint256(0xFF));       // 25-32
-    bytes32 constant STRENGTH_MASK = bytes32(uint256(0xFF));     // 33-40
-    bytes32 constant SPEED_MASK = bytes32(uint256(0xFF));        // 41-48
-    bytes32 constant INTELLIGENCE_MASK = bytes32(uint256(0xFF)); // 49-56
-    bytes32 constant ACCURACY_MASK = bytes32(uint256(0xFF));     // 57-64
-    bytes32 constant CURRENT_HEALTH_MASK = bytes32(uint256(0xFF)); // 65-72
-    bytes32 constant BREEDING_MASK = bytes32(uint256(0xFF));     // 80-87
-    bytes32 constant CLASS_MASK = bytes32(uint256(0xFF));        // 128-135
-    
-    uint8 constant XP_POSITION = 0;
-    uint8 constant LEVEL_POSITION = 17;
-    uint8 constant HEALTH_POSITION = 25;
-    uint8 constant STRENGTH_POSITION = 33;
-    uint8 constant SPEED_POSITION = 41;
-    uint8 constant INTELLIGENCE_POSITION = 49;
-    uint8 constant ACCURACY_POSITION = 57;
-    uint8 constant CURRENT_HEALTH_POSITION = 65;
-    uint8 constant BREEDING_POSITION = 80;
-    uint8 constant CLASS_POSITION = 128;
-    
-    // Valori iniziali
-    uint8 constant INITIAL_LEVEL = 1;
-    uint8 constant INITIAL_HEALTH = 100;
-    uint8 constant INITIAL_STATS = 10;
-    uint8 constant INITIAL_BREEDING = 0;
+    // Utilizzo di costanti da GameConstants
+    using GameConstants for uint256;
     
     /**
      * @dev Inizializza la libreria con valori predefiniti
@@ -200,18 +175,18 @@ library TraitStatsLib {
         
         // Inizializza i dati con le statistiche di base
         uint256 data = 0;
-        data = StatsLib.updateField(data, 0, uint256(XP_MASK), XP_POSITION);
-        data = StatsLib.updateField(data, INITIAL_LEVEL, uint256(LEVEL_MASK), LEVEL_POSITION);
+        data = StatsLib.updateField(data, 0, GameConstants.XP_MASK, GameConstants.XP_POSITION);
+        data = StatsLib.updateField(data, GameConstants.INITIAL_LEVEL, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
         
         // Ottieni i modificatori di classe
         ClassTrait storage classTrait = self.classTraits[classe];
         
         // Applica i modificatori di classe alle statistiche base
-        uint8 health = INITIAL_HEALTH;
-        uint8 strength = INITIAL_STATS;
-        uint8 speed = INITIAL_STATS;
-        uint8 intelligence = INITIAL_STATS;
-        uint8 accuracy = INITIAL_STATS;
+        uint8 health = GameConstants.INITIAL_HEALTH;
+        uint8 strength = GameConstants.INITIAL_STATS;
+        uint8 speed = GameConstants.INITIAL_STATS;
+        uint8 intelligence = GameConstants.INITIAL_STATS;
+        uint8 accuracy = GameConstants.INITIAL_STATS;
         
         // Applica modificatori in percentuale della classe
         health = applyPercentageModifier(health, classTrait.healthModPct);
@@ -221,14 +196,14 @@ library TraitStatsLib {
         accuracy = applyPercentageModifier(accuracy, classTrait.accuracyModPct);
         
         // Aggiorna i valori nei dati
-        data = StatsLib.updateField(data, health, uint256(HEALTH_MASK), HEALTH_POSITION);
-        data = StatsLib.updateField(data, health, uint256(CURRENT_HEALTH_MASK), CURRENT_HEALTH_POSITION);
-        data = StatsLib.updateField(data, strength, uint256(STRENGTH_MASK), STRENGTH_POSITION);
-        data = StatsLib.updateField(data, speed, uint256(SPEED_MASK), SPEED_POSITION);
-        data = StatsLib.updateField(data, intelligence, uint256(INTELLIGENCE_MASK), INTELLIGENCE_POSITION);
-        data = StatsLib.updateField(data, accuracy, uint256(ACCURACY_MASK), ACCURACY_POSITION);
-        data = StatsLib.updateField(data, INITIAL_BREEDING, uint256(BREEDING_MASK), BREEDING_POSITION);
-        data = StatsLib.updateField(data, classe, uint256(CLASS_MASK), CLASS_POSITION);
+        data = StatsLib.updateField(data, health, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, health, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, strength, GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+        data = StatsLib.updateField(data, speed, GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+        data = StatsLib.updateField(data, intelligence, GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+        data = StatsLib.updateField(data, accuracy, GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
+        data = StatsLib.updateField(data, GameConstants.INITIAL_BREEDING, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
+        data = StatsLib.updateField(data, classe, GameConstants.CLASS_MASK, GameConstants.CLASS_POSITION);
         
         return data;
     }
@@ -244,12 +219,12 @@ library TraitStatsLib {
         require(self.initialized, "TraitStatsLib: not initialized");
         
         // Estrai i valori correnti
-        uint8 health = uint8(StatsLib.extractField(data, uint256(HEALTH_MASK), HEALTH_POSITION));
-        uint8 strength = uint8(StatsLib.extractField(data, uint256(STRENGTH_MASK), STRENGTH_POSITION));
-        uint8 speed = uint8(StatsLib.extractField(data, uint256(SPEED_MASK), SPEED_POSITION));
-        uint8 intelligence = uint8(StatsLib.extractField(data, uint256(INTELLIGENCE_MASK), INTELLIGENCE_POSITION));
-        uint8 accuracy = uint8(StatsLib.extractField(data, uint256(ACCURACY_MASK), ACCURACY_POSITION));
-        uint8 currentHealth = uint8(StatsLib.extractField(data, uint256(CURRENT_HEALTH_MASK), CURRENT_HEALTH_POSITION));
+        uint8 health = uint8(StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION));
+        uint8 strength = uint8(StatsLib.extractField(data, GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION));
+        uint8 speed = uint8(StatsLib.extractField(data, GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION));
+        uint8 intelligence = uint8(StatsLib.extractField(data, GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION));
+        uint8 accuracy = uint8(StatsLib.extractField(data, GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION));
+        uint8 currentHealth = uint8(StatsLib.extractField(data, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION));
         
         // Applica bonus dai tratti FUR
         FurTrait storage furTrait = self.furTraits[uint8(fenotipo[1])];
@@ -291,19 +266,19 @@ library TraitStatsLib {
         }
         
         // Aggiorna la salute corrente proporzionalmente all'aumento di salute max
-        uint8 oldHealth = uint8(StatsLib.extractField(data, uint256(HEALTH_MASK), HEALTH_POSITION));
+        uint8 oldHealth = uint8(StatsLib.extractField(data, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION));
         if (oldHealth > 0) {
             currentHealth = uint8((uint256(currentHealth) * uint256(health)) / uint256(oldHealth));
         }
         
         // Aggiorna i dati con i nuovi valori
-        data = StatsLib.updateField(data, newLevel, uint256(LEVEL_MASK), LEVEL_POSITION);
-        data = StatsLib.updateField(data, health, uint256(HEALTH_MASK), HEALTH_POSITION);
-        data = StatsLib.updateField(data, currentHealth, uint256(CURRENT_HEALTH_MASK), CURRENT_HEALTH_POSITION);
-        data = StatsLib.updateField(data, strength, uint256(STRENGTH_MASK), STRENGTH_POSITION);
-        data = StatsLib.updateField(data, speed, uint256(SPEED_MASK), SPEED_POSITION);
-        data = StatsLib.updateField(data, intelligence, uint256(INTELLIGENCE_MASK), INTELLIGENCE_POSITION);
-        data = StatsLib.updateField(data, accuracy, uint256(ACCURACY_MASK), ACCURACY_POSITION);
+        data = StatsLib.updateField(data, newLevel, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
+        data = StatsLib.updateField(data, health, GameConstants.HEALTH_MASK, GameConstants.HEALTH_POSITION);
+        data = StatsLib.updateField(data, currentHealth, GameConstants.CURRENT_HEALTH_MASK, GameConstants.CURRENT_HEALTH_POSITION);
+        data = StatsLib.updateField(data, strength, GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+        data = StatsLib.updateField(data, speed, GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+        data = StatsLib.updateField(data, intelligence, GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+        data = StatsLib.updateField(data, accuracy, GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
         
         return data;
     }

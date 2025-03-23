@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IIdleProcioneNFT.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/StatsLib.sol";
+import "./libraries/GameConstants.sol";
 
 /// @title IdleProcioneLeveling
 /// @notice Sistema di leveling per gli NFT Procione
@@ -69,11 +70,11 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
         if (nftContract.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
 
         uint256 data = nftContract.getProcioneData(tokenId);
-        uint256 currentLevel = data.extractField(StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
+        uint256 currentLevel = data.extractField(GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
         
         if (currentLevel >= maxLevel) revert MaxLevelReached();
         
-        uint256 currentXP = data.extractField(StatsLib.XP_MASK, StatsLib.XP_POSITION);
+        uint256 currentXP = data.extractField(GameConstants.XP_MASK, GameConstants.XP_POSITION);
         uint256 requiredXP = xpForLevel(currentLevel);
         if (currentXP < requiredXP) revert InsufficientXP();
 
@@ -138,36 +139,36 @@ contract IdleProcioneLeveling is Ownable, Pausable, ReentrancyGuard {
 
     // ========== Internal Functions ==========
     function _updateLevelAndXP(uint256 data, uint256 newLevel, uint256 newXP) private pure returns (uint256) {
-        data = data.updateField(newXP, StatsLib.XP_MASK, StatsLib.XP_POSITION);
-        return data.updateField(newLevel, StatsLib.LEVEL_MASK, StatsLib.LEVEL_POSITION);
+        data = data.updateField(newXP, GameConstants.XP_MASK, GameConstants.XP_POSITION);
+        return data.updateField(newLevel, GameConstants.LEVEL_MASK, GameConstants.LEVEL_POSITION);
     }
 
     function _updateStats(uint256 data) private pure returns (uint256) {
         unchecked {
             uint256[4] memory stats;
-            stats[0] = data.extractField(StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION);
-            stats[1] = data.extractField(StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION);
-            stats[2] = data.extractField(StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION);
-            stats[3] = data.extractField(StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION);
+            stats[0] = data.extractField(GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+            stats[1] = data.extractField(GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+            stats[2] = data.extractField(GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+            stats[3] = data.extractField(GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
 
             for(uint256 i = 0; i < 4; i++) {
-                if (stats[i] > 253) revert InvalidStats(); // 255 - 2 per permettere l'incremento
-                stats[i] += 2;
+                if (stats[i] > 254) revert InvalidStats(); // 255 - 1 per permettere l'incremento
+                stats[i] += 1;
             }
 
-            data = data.updateField(stats[0], StatsLib.STRENGTH_MASK, StatsLib.STRENGTH_POSITION);
-            data = data.updateField(stats[1], StatsLib.SPEED_MASK, StatsLib.SPEED_POSITION);
-            data = data.updateField(stats[2], StatsLib.INTELLIGENCE_MASK, StatsLib.INTELLIGENCE_POSITION);
-            return data.updateField(stats[3], StatsLib.ACCURACY_MASK, StatsLib.ACCURACY_POSITION);
+            data = data.updateField(stats[0], GameConstants.STRENGTH_MASK, GameConstants.STRENGTH_POSITION);
+            data = data.updateField(stats[1], GameConstants.SPEED_MASK, GameConstants.SPEED_POSITION);
+            data = data.updateField(stats[2], GameConstants.INTELLIGENCE_MASK, GameConstants.INTELLIGENCE_POSITION);
+            return data.updateField(stats[3], GameConstants.ACCURACY_MASK, GameConstants.ACCURACY_POSITION);
         }
     }
 
     function _updateBreedingSlots(uint256 data, uint256 newLevel) private pure returns (uint256) {
         if (newLevel == 3 || newLevel == 10 || newLevel == 20 || newLevel == 35 || newLevel == 50) {
-            uint256 currentBreeding = data.extractField(StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+            uint256 currentBreeding = data.extractField(GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
             if (currentBreeding >= 5) revert InvalidStats(); // Massimo 5 slot di breeding
             uint256 newBreeding = currentBreeding + 1;
-            return data.updateField(newBreeding, StatsLib.BREEDING_MASK, StatsLib.BREEDING_POSITION);
+            return data.updateField(newBreeding, GameConstants.BREEDING_MASK, GameConstants.BREEDING_POSITION);
         }
         return data;
     }
